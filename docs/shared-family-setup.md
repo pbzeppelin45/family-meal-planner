@@ -37,3 +37,20 @@ This feature is developed on `feature/shared-family-data`. Until a Supabase proj
 ## Project provisioned
 
 Supabase project: `mxirdzjbmjumknctyjdp` (US West). The base schema has been applied and row-level security confirmed on all five family tables. Vercel preview-only public environment variables are configured. This branch needs a new preview build to ingest them. Set Authentication URL Configuration before email-link tests.
+
+## Next iteration: automatic saving and recipe library
+- Plan revisions are checked by the `save_family_plan` RPC. A stale save raises `VERSION_CONFLICT` instead of overwriting.
+- Realtime listens for family plan updates; periodic polling handles missed notifications.
+- Changes save automatically after approximately one second of inactivity.
+- If another device edits while local changes remain unsaved, the user must select **Load their version** or explicitly **Keep my version** after confirmation.
+- Old clients' manual updates are tracked through a backward-compatible revision trigger.
+- The family recipe library supports storing curated meals, adding custom recipes, marking favorites, and placing saved recipes in any of the five meal slots.
+- Recipes are stored in `family_recipes` and isolated by household RLS, with Realtime plus periodic refresh.
+- The live production application remains unchanged until the feature branch has been tested end to end.
+
+## Important preview sign-in configuration
+The fixed test deployment hostname previously authorized in Supabase differs from new preview deployment hostnames. For reliable preview sign-in, add the **stable branch alias** below to Supabase Authentication > URL Configuration > Redirect URLs:
+
+`https://family-meal-planner-git-feature-sha-80c361-liamphilipbrett-1194.vercel.app/**`
+
+Use this stable branch alias for testing new commits. Avoid repeatedly adding ephemeral commit-specific hostnames.
