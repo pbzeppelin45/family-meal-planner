@@ -53,6 +53,7 @@ export default function FamilyCloudSync({
   const [syncStatus, setSyncStatus] = useState("Waiting for family");
   const [conflict, setConflict] = useState(false);
   const [recipeRefresh, setRecipeRefresh] = useState(0);
+  const [retryTick, setRetryTick] = useState(0);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
   const onLoadRef = useRef(onLoad);
@@ -144,6 +145,17 @@ export default function FamilyCloudSync({
     return () => { ++generation.current; };
   }, [user?.id, activeId, fetchPlan, applyRemote]);
 
+  // Network interruptions should not strand a locally edited plan indefinitely.
+  useEffect(() => {
+    const interval = setInterval(() => setRetryTick(x => x + 1), 15000);
+    const online = () => setRetryTick(x => x + 1);
+    window.addEventListener("online", online);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("online", online);
+    };
+  }, []);
+
   const checkRemote = useCallback(async (householdId: string) => {
     if (!client || !syncReady || saving.current || currentHousehold.current !== householdId) return;
     try {
@@ -224,7 +236,7 @@ export default function FamilyCloudSync({
     };
     const timer = setTimeout(() => void run(), 950);
     return () => clearTimeout(timer);
-  }, [snapshot, user?.id, activeId, syncReady]);
+  }, [snapshot, user?.id, activeId, syncReady, retryTick]);
 
   const act = async (task: () => Promise<void>) => {
     setBusy(true);
