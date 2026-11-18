@@ -47,3 +47,5 @@ No environment variables are required for v1. Subsequent releases will require d
 ## Deployment connection test
 
 A documentation-only commit was made to verify whether pushes to `main` trigger an automatic Vercel build. This does not change application behavior.
+
+Git integration verified: Vercel project linked to pbzeppelin45/family-meal-planner. Automatic deployment smoke test.
