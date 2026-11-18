@@ -15,6 +15,7 @@ export default function FamilyRecipeLibrary({
   onChanged: () => void;
 }) {
   const [rows, setRows] = useState<LibraryRow[]>([]);
+  const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [name, setName] = useState("");
@@ -36,7 +37,15 @@ export default function FamilyRecipeLibrary({
         else setRows((data ?? []) as LibraryRow[]);
       });
     return () => { live = false; };
-  }, [client, householdId, refreshKey]);
+  }, [client, householdId, refreshKey, reload]);
+
+  useEffect(() => {
+    const channel = client.channel("family-recipes-" + householdId)
+      .on("postgres_changes", { event: "*", schema: "public", table: "family_recipes", filter: "household_id=eq." + householdId },
+        () => setReload(value => value + 1)).subscribe();
+    const poll = setInterval(() => setReload(value => value + 1), 30000);
+    return () => { clearInterval(poll); void client.removeChannel(channel); };
+  }, [client, householdId]);
 
   const perform = async (task: () => Promise<void>) => {
     setBusy(true);
