@@ -43,3 +43,7 @@ No environment variables are required for v1. Subsequent releases will require d
 - Use server-side authorization and per-family database isolation before connecting accounts or storing personal data.
 - Never put Safeway/Google/OpenAI credentials in client-side `NEXT_PUBLIC_` variables.
 - The email button uses `mailto:`; there is no background email delivery.
+
+## Deployment connection test
+
+A documentation-only commit was made to verify whether pushes to `main` trigger an automatic Vercel build. This does not change application behavior.
