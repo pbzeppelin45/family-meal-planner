@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { groups, type Recipe, type Ingredient } from "../lib/recipes";
+import FamilyCloudSync from "./FamilyCloudSync";
 type Saved={step:number;choices:number[];included:boolean[];have:Record<string,boolean>;recipients:string};
 const initial:Saved={step:0,choices:[0,0,0,0,0],included:[true,true,true,true,true],have:{},recipients:"liam.philip.brett@gmail.com, zetzerk@gmail.com"};
 const storageKey="family-meal-planner-v1";
@@ -27,5 +28,6 @@ export default function Home(){
  {state.step===2&&<section className="panel"><h2>Safeway-ready shopping list</h2><p>Store #1477, NW Market Street, Seattle. This release does not modify your live Safeway cart.</p><div className="inventory">{need.length?need.map(x=><div className="item" key={x.name}><strong>{x.name}</strong><span>{x.amounts.join(" + ")}</span></div>):<p>Everything is marked Have.</p>}</div><div className="actions"><button className="secondary" onClick={()=>patch({step:1})}>← Pantry</button><button className="secondary" onClick={()=>copy(need.map(x=>x.name+" — "+x.amounts.join(" + ")).join("\n"))}>Copy list</button><button onClick={()=>patch({step:3})}>Share recipes →</button></div></section>}
  {state.step===3&&<section className="panel"><h2>Review and share recipes</h2><p>Review the complete packet. Email opens a draft in your mail program; nothing is sent automatically.</p><label className="label" htmlFor="recipients">Recipients</label><input id="recipients" className="wide" value={state.recipients} onChange={e=>patch({recipients:e.target.value})}/>{selected.map((r:Recipe)=><article className="recipe" key={r.category}><span className="tag">{r.category}</span><h3>{r.name}</h3><p>{r.time} minutes · {r.servings} servings</p><h4>Ingredients</h4><ul>{r.ingredients.map((x:Ingredient,i)=><li key={i}>{x.name} — {x.amount}</li>)}</ul><h4>Instructions</h4><ol>{r.steps.map((x,i)=><li key={i}>{x}</li>)}</ol></article>)}<div className="actions"><button className="secondary" onClick={()=>patch({step:2})}>← Shopping list</button><button className="secondary" onClick={download}>Download packet</button><button onClick={email}>Open email draft →</button></div></section>}
  {notice&&<p className="notice" role="status">{notice}</p>}
- <footer>Prototype only. No accounts, purchases, checkout, or automatic emails are created.</footer></main>;
+ <FamilyCloudSync snapshot={state} onLoad={(next)=>setState(next)} />
+ <footer>Family cloud sync is optional; purchases, checkout, and automatic email sending are not enabled.</footer></main>;
 }
