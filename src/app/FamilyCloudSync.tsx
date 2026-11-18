@@ -63,6 +63,8 @@ export default function FamilyCloudSync({
   const blocked = useRef(false);
   const hydrationTarget = useRef<string | null>(null);
   const generation = useRef(0);
+  const currentHousehold = useRef("");
+  currentHousehold.current = activeId;
   const active = useMemo(() => households.find(h => h.id === activeId), [households, activeId]);
 
   const refreshHouseholds = useCallback(async (s: SupabaseClient, preferred?: string) => {
@@ -143,9 +145,10 @@ export default function FamilyCloudSync({
   }, [user?.id, activeId, fetchPlan, applyRemote]);
 
   const checkRemote = useCallback(async (householdId: string) => {
-    if (generation.current < 0 || !client || !syncReady || saving.current) return;
+    if (!client || !syncReady || saving.current || currentHousehold.current !== householdId) return;
     try {
       const row = await fetchPlan(householdId);
+      if (currentHousehold.current !== householdId) return;
       if (row.revision <= expectedRevision.current) return;
       if (acknowledged.current !== JSON.stringify(snapshotRef.current)) {
         blocked.current = true;
@@ -182,13 +185,13 @@ export default function FamilyCloudSync({
     }
     if (serialized === acknowledged.current) return;
     const householdId = activeId;
-    const userId = user.id;
+    const currentGeneration = generation.current;
     const run = async () => {
-      if (!client || saving.current || blocked.current) return;
+      if (!client || saving.current || blocked.current || generation.current !== currentGeneration) return;
       saving.current = true;
       setSyncStatus("Saving…");
       try {
-        while (!blocked.current && generation.current >= 0) {
+        while (!blocked.current && generation.current === currentGeneration) {
           const latest = JSON.stringify(snapshotRef.current);
           if (latest === acknowledged.current) break;
           const { data, error } = await client.rpc("save_family_plan", {
@@ -196,6 +199,7 @@ export default function FamilyCloudSync({
             p_state: JSON.parse(latest),
             p_expected_revision: expectedRevision.current,
           });
+          if (generation.current !== currentGeneration) break;
           if (error) {
             if (error.code === "40001" || error.message.includes("VERSION_CONFLICT")) {
               blocked.current = true;
