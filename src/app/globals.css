@@ -8,3 +8,18 @@
 .cloud-warning{font-size:13px;background:#fff8df;color:#685625;padding:12px;border-radius:9px}
 .cloud-panel code{word-break:break-all;background:#edf3f0;padding:4px;border-radius:4px}
 .cloud-panel small{color:#647668}
+
+.sync-good{color:#1b6747;font-size:13px}.sync-conflict{color:#a04822;font-size:13px}
+.cloud-small{font-size:13px;color:#55695b}
+.library{margin-top:20px;padding-top:18px;border-top:1px solid #dde9e2}
+.library h3{margin:0 0 8px}
+.library-grid{display:flex;flex-direction:column;gap:12px;margin:12px 0}
+.library-row{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid #dce8df;padding:12px;border-radius:10px;flex-wrap:wrap}
+.library-row small{display:block;color:#687d6e;margin-top:4px}
+.library-actions{display:flex;flex-wrap:wrap;gap:6px}
+.library-actions button{font-size:12px;padding:8px 10px}
+.library-form{display:grid;gap:12px;margin:14px 0}
+.library-form label{font-size:13px;font-weight:bold;display:flex;flex-direction:column;gap:5px}
+.library-form input,.library-form select,.library-form textarea,.library select{font:inherit;padding:10px;border:1px solid #bfd1c3;border-radius:8px;width:100%;color:#193426;background:#fff}
+.library-form textarea{resize:vertical}
+@media(max-width:700px){.library-row{align-items:stretch}.library-actions{width:100%}.library-actions button{flex:1}}
