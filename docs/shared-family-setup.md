@@ -33,3 +33,7 @@ This feature is developed on `feature/shared-family-data`. Until a Supabase proj
 - The pantry is currently a Have/Need flag keyed by ingredient name. Future releases should normalize units and track actual quantity before grocery cart automation.
 - Optional per-household custom recipes are represented by `family_recipes`, but the recipe editor has not been built.
 - Add an explicit household invitation management screen, invitation revocation, audit history, and account deletion for a production rollout.
+
+## Project provisioned
+
+Supabase project: `mxirdzjbmjumknctyjdp` (US West). The base schema has been applied and row-level security confirmed on all five family tables. Vercel preview-only public environment variables are configured. This branch needs a new preview build to ingest them. Set Authentication URL Configuration before email-link tests.
