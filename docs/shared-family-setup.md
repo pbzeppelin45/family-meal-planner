@@ -54,3 +54,26 @@ The fixed test deployment hostname previously authorized in Supabase differs fro
 `https://family-meal-planner-git-feature-sha-80c361-liamphilipbrett-1194.vercel.app/**`
 
 Use this stable branch alias for testing new commits. Avoid repeatedly adding ephemeral commit-specific hostnames.
+
+## Menu recommendations (new)
+- Signed-in household members can use **Weekly menu ideas** to rank curated recipes and the household recipe library.
+- Recommendations consider recent approved menus (last 3 approvals), pantry Have flags, protein variety, dinner time limits, and comma-separated ingredient exclusions.
+- Approving a weekly menu records a brief history inside the shared family plan, capped at 16 menu entries. Suggestions do not overwrite the current plan until the user explicitly selects **Use this suggested menu** and confirms.
+- Suggestions are user-reviewed, not automatically purchased or emailed.
+
+### Optional paid AI recipe generation
+The app now has a server-side `POST /api/ai-menu` endpoint for generating complete new recipes. **This feature is OFF until a server-side API credential is deliberately added.** It requires `OPENAI_API_KEY` in Vercel (use an encrypted or sensitive *server-only* environment variable; never prefix with `NEXT_PUBLIC_`). Optionally configure `OPENAI_MEAL_MODEL`; default is `gpt-5-mini`. Do not commit keys to GitHub, expose them in screenshots, or paste them into public chat.
+- Requests require a valid Supabase access token and household membership. The endpoint checks the family with the caller's identity before making a model request.
+- A database-backed quota permits up to 3 AI menu generations per household member per UTC day. Quota reservation is atomic; the underlying usage table is not writable through the public API.
+- The prompt requests five fully specified recipes, honoring ingredient exclusions and realistic weeknight preparation times. Returned JSON is validated before it may be previewed.
+- A successful generation incurs OpenAI API charges based on the selected model and token usage. A Vercel project env var is not sufficient by itself if the OpenAI API account lacks billing/credits.
+- The app deliberately does not make any model calls while `OPENAI_API_KEY` is unset. The no-cost smart recipe recommendations remain usable.
+- Before enabling real paid generation, review billing limits and test with a single request from an authorized family account.
+
+### Acceptance checks
+- With no AI key, selecting AI mode displays a clear unavailable message without modifying the weekly plan.
+- With a configured key, only household members may generate; a nonmember receives 403 and an unauthenticated request receives 401.
+- The 4th AI generation on the same UTC day returns a limit error.
+- The generated menu requires explicit confirmation; changing preferences alone does not replace menu choices.
+- After approval, the previous approved menu appears in history and new weekly suggestions deprioritize repeats.
+- Avoid-list constraints never silently fall back to disallowed recipes in the smart recommender.
