@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import { type Recipe } from "../lib/recipes";
 import FamilyRecipeLibrary from "./FamilyRecipeLibrary";
+import MealRecommendations, { type MenuPreferences, type MenuHistory } from "./MealRecommendations";
+import { groups } from "../lib/recipes";
 
 export type FamilyPlanSnapshot = {
   step: number;
@@ -12,6 +14,8 @@ export type FamilyPlanSnapshot = {
   have: Record<string, boolean>;
   recipients: string;
   customRecipes?: Record<string, Recipe>;
+  preferences?: MenuPreferences;
+  mealHistory?: MenuHistory[];
 };
 type Household = { id: string; name: string };
 type PlanRow = { state: unknown; revision: number };
@@ -32,12 +36,13 @@ function message(e: unknown): string {
 }
 
 export default function FamilyCloudSync({
-  snapshot, onLoad, selected, onUseRecipe
+  snapshot, onLoad, selected, onUseRecipe, onApplyMenu
 }: {
   snapshot: FamilyPlanSnapshot;
   onLoad: (next: FamilyPlanSnapshot) => void;
   selected: Recipe[];
   onUseRecipe: (recipe: Recipe, slot: number) => void;
+  onApplyMenu: (recipes: Recipe[]) => void;
 }) {
   const [user, setUser] = useState<User | null>(null);
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -53,6 +58,7 @@ export default function FamilyCloudSync({
   const [syncStatus, setSyncStatus] = useState("Waiting for family");
   const [conflict, setConflict] = useState(false);
   const [recipeRefresh, setRecipeRefresh] = useState(0);
+  const [recommendedLibrary, setRecommendedLibrary] = useState<Recipe[]>([]);
   const [retryTick, setRetryTick] = useState(0);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
@@ -67,6 +73,18 @@ export default function FamilyCloudSync({
   const currentHousehold = useRef("");
   currentHousehold.current = activeId;
   const active = useMemo(() => households.find(h => h.id === activeId), [households, activeId]);
+  useEffect(()=>{
+    if(!client || !user || !activeId) {setRecommendedLibrary([]);return;}
+    let live=true;
+    void client.from("family_recipes").select("recipe").eq("household_id",activeId).then(({data,error})=>{
+      if(!live) return;
+      if(error) {setStatus(error.message);return;}
+      setRecommendedLibrary((data??[]).map(x=>x.recipe as Recipe).filter(
+        r=>!!r&&typeof r.name==="string"&&Array.isArray(r.ingredients)&&Array.isArray(r.steps)
+      ));
+    });
+    return ()=>{live=false;};
+  },[user?.id,activeId,recipeRefresh]);
 
   const refreshHouseholds = useCallback(async (s: SupabaseClient, preferred?: string) => {
     const { data, error } = await s.from("family_households")
@@ -347,6 +365,20 @@ export default function FamilyCloudSync({
           </div>
           {inviteCode && <p>Invitation code (expires in 7 days): <code>{inviteCode}</code></p>}
         </details>
+        <MealRecommendations
+          savedRecipes={recommendedLibrary}
+          current={groups.map((g,i)=>snapshot.customRecipes?.[i] ?? g[snapshot.choices[i]] ?? g[0])}
+          history={snapshot.mealHistory ?? []}
+          have={snapshot.have}
+          householdId={activeId}
+          preferences={snapshot.preferences ?? {maxWeeknightMinutes:40,avoid:"",notes:"Two adults and three kids; adventurous family meals."}}
+          onPreferences={preferences=>onLoad({...snapshot,preferences})}
+          onApply={onApplyMenu}
+          getToken={async()=> {
+            const {data}=await client.auth.getSession();
+            return data.session?.access_token ?? null;
+          }}
+        />
         <FamilyRecipeLibrary client={client} householdId={activeId}
           selectedRecipes={selected} refreshKey={recipeRefresh}
           onUse={onUseRecipe} onChanged={() => setRecipeRefresh(x => x + 1)}/>
