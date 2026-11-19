@@ -19,6 +19,7 @@ type Props = {
   onPreferences: (value: MenuPreferences) => void;
   onApply: (recipes: Recipe[]) => void;
   getToken: () => Promise<string | null>;
+  householdId: string;
 };
 const normalize = (text: string) => text.trim().toLowerCase().replace(/[^a-z0-9]/g,"");
 const protein = (r: Recipe): string => {
@@ -45,12 +46,11 @@ const isRecipe = (v: unknown): v is Recipe => {
     && Array.isArray(r.steps) && r.steps.length >= 2
     && r.steps.every(s => typeof s === "string");
 };
-function score(recipe: Recipe, recent: Set<string>, pantry: Set<string>, used: string[], isFavorite: boolean) {
+function score(recipe: Recipe, recent: Set<string>, pantry: Set<string>, used: string[]) {
   const recentPenalty = recent.has(normalize(recipe.name)) ? -70 : 0;
   const pantryBonus = recipe.ingredients.reduce((sum, x) => sum + (pantry.has(normalize(x.name)) ? 2 : 0), 0);
   const proteinPenalty = used.includes(protein(recipe)) ? -12 : 10;
-  const favoriteBonus = isFavorite ? 13 : 0;
-  return recentPenalty + pantryBonus + proteinPenalty + favoriteBonus
+  return recentPenalty + pantryBonus + proteinPenalty
     - Math.max(0, recipe.time - 40) / 25;
 }
 function smartMenu(
@@ -72,20 +72,24 @@ function smartMenu(
       .filter(r => !exclusions.some(a=>((r.name+" "+r.ingredients.map(i=>i.name).join(" ")).toLowerCase().includes(a))))
       .filter(r => !picked.has(normalize(r.name)));
     // Prefer different meals from the current week when enough choices exist.
-    const candidates = choices.length ? choices : builtIn.filter(r=> !picked.has(normalize(r.name)));
+    const candidates = choices.length ? choices : [...inCategory,...inWeeknights,...builtIn]
+      .filter(r=>isRecipe(r))
+      .filter(r=>!exclusions.some(a=>((r.name+" "+r.ingredients.map(i=>i.name).join(" ")).toLowerCase().includes(a))))
+      .filter(r=>!picked.has(normalize(r.name)));
     const ordered = candidates
-      .map((r,i) => ({r,i,score:score(r,recent,pantry,used,current.some(x=>normalize(x.name)===normalize(r.name))?false:false)
+      .map((r,i) => ({r,i,score:score(r,recent,pantry,used)
         + (saved.some(x=>normalize(x.name)===normalize(r.name)) ? 5:0)
         - (current[slot] && normalize(current[slot].name)===normalize(r.name) ? 4 : 0)}))
       .sort((a,b)=>b.score-a.score || a.i-b.i);
-    const recipe = ordered[0]?.r ?? builtIn[0];
+    const recipe = ordered[0]?.r;
+    if (!recipe) return null;
     picked.add(normalize(recipe.name)); used.push(protein(recipe));
     return {recipe,source:saved.some(s=>normalize(s.name)===normalize(recipe.name))?"saved":"built-in"};
-  });
+  }).filter((choice):choice is MenuOption=>choice!==null);
 }
 const defaultNotes = "Two adults and three kids; adventurous family meals, varied proteins, practical weeknights.";
 export default function MealRecommendations({
-  savedRecipes,current,history,have,preferences,onPreferences,onApply,getToken
+  savedRecipes,current,history,have,preferences,onPreferences,onApply,getToken,householdId
 }: Props) {
   const [options,setOptions] = useState<MenuOption[]>([]);
   const [busy,setBusy] = useState(false);
@@ -98,6 +102,7 @@ export default function MealRecommendations({
   const generate = async () => {
     setMessage("");
     if(mode === "smart") {
+      if(candidates.length!==5){setOptions([]);setMessage("Not enough recipes match these exclusions. Adjust them or use AI to generate alternatives.");return;}
       setOptions(candidates);
       setMessage("Recommendations ranked using your recipes, recently approved menus, time limit and pantry.");
       return;
@@ -109,7 +114,7 @@ export default function MealRecommendations({
       const response = await fetch("/api/ai-menu",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-        body:JSON.stringify({preferences,history:history.slice(-4),current:current.map(r=>r.name)})
+        body:JSON.stringify({householdId,preferences,history:history.slice(-4),current:current.map(r=>r.name)})
       });
       const data: {message?:string;recipes?:unknown[]} = await response.json();
       if(!response.ok) throw new Error(data.message || "AI generation was not available.");
