@@ -104,3 +104,14 @@ Gemini 3.x Google Search grounding is not available for this project's free-tier
 
 ## Tavily API activation
 TAVILY_API_KEY has been added as a Vercel Preview sensitive environment variable. Trigger a new `feature/shared-family-data` preview build to load the variable into `/api/find-recipes`; previous preview deployments do not automatically inherit later environment changes. Do not expose or commit the key itself.
+
+## Published recipe auto-import and per-meal replacement
+- Published recipe mode now calls `POST /api/published-menu`, not the old `/api/find-recipes` link-only endpoint.
+- It sends five focused Tavily basic searches, rejects obvious video/roundup results and finds individual pages with both an ingredients section and directions. If search content lacks full text, it attempts a Tavily Extract call for selected URLs.
+- A **single batched Gemini extraction** converts each source's measured ingredients and cooking directions into a usable family recipe. Gemini is instructed to preserve quantities, paraphrase directions, not invent missing ingredients, and avoid excluded foods. The API additionally validates source-backed ingredient coverage before offering a menu.
+- Every imported recipe retains `sourceUrl` and `sourceTitle`. Source links are shown in recommendation cards, approved menu cards, and downloaded/shared recipe packets.
+- **Try another published recipe** requests a replacement for a single meal slot, excludes previously offered source URLs, and preserves all other suggestions. Applying the five recipes requires the usual explicit confirmation; the consolidated grocery list then uses their ingredients.
+- If a source is a roundup or its essential measurements/directions cannot be determined, the importer rejects it instead of inventing a complete recipe. A subsequent search can retry.
+- One initial menu request or one per-slot replacement uses one of the household member's six daily published-recipe *search attempts*. This is separate from the original AI menu-generation quota. Tavily free credits and Gemini free-tier rate limits still apply.
+- Acceptance tests: genuine published source links for every recipe; ingredients and step summaries present; swapping slot 2 changes only that slot; applying replaces the weekly menu; grocery list reflects imported quantities; legacy original AI mode remains functional.
+- Search-backed extraction needs its first live authenticated browser acceptance test to confirm external provider responses match the configured account's actual quotas and outputs.
