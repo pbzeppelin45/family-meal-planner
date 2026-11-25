@@ -9,7 +9,7 @@ export type MenuPreferences = {
   notes: string;
 };
 export type MenuHistory = { at: string; names: string[] };
-export type MenuOption = { recipe: Recipe; source: "saved" | "built-in" | "AI" };
+export type MenuOption = { recipe: Recipe; source: "saved" | "built-in" | "AI" | "published" };
 type Props = {
   savedRecipes: Recipe[];
   current: Recipe[];
@@ -93,6 +93,7 @@ export default function MealRecommendations({
 }: Props) {
   const [options,setOptions] = useState<MenuOption[]>([]);
   const [busy,setBusy] = useState(false);
+  const [replacing,setReplacing] = useState<number|null>(null);
   const [message,setMessage] = useState("");
   const [mode,setMode] = useState<"smart" | "search" | "AI">("smart");
   const [found,setFound] = useState<{summary:string;sources:{url:string;title:string}[]}|null>(null);
@@ -114,7 +115,7 @@ export default function MealRecommendations({
     try {
       const token = await getToken();
       if(!token) throw new Error("Please sign in to generate new recipes.");
-      const response = await fetch(mode === "search" ? "/api/find-recipes" : "/api/ai-menu",{
+      const response = await fetch(mode === "search" ? "/api/published-menu" : "/api/ai-menu",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
         body:JSON.stringify({householdId,preferences,history:history.slice(-4),current:current.map(r=>r.name)})
@@ -125,12 +126,13 @@ export default function MealRecommendations({
       } = await response.json();
       if(!response.ok) throw new Error(data.message || "Recipe service was not available.");
       if(mode === "search") {
-        if(!data.summary || !Array.isArray(data.sources) || !data.sources.length)
-          throw new Error("Search did not return verifiable published sources.");
-        setFound({summary:data.summary,sources:data.sources});
-        setMessage(data.sourceType?.startsWith("Search links")
-          ? "No search API is connected yet. Open these targeted searches to find publisher recipes. This does not consume an AI generation."
-          : "Found published recipe links. Open the publishers’ pages and verify ingredients, instructions and cooking times.");
+        if(!Array.isArray(data.recipes) || data.recipes.length!==5 || !data.recipes.every(isRecipe))
+          throw new Error("Not all five published recipes could be imported. No menu was changed.");
+        const recipes=(data.recipes as Recipe[]).map((recipe,i)=>({...recipe,category:groups[i][0].category}));
+        if(recipes.some(r=>!r.sourceUrl || !r.sourceUrl.startsWith("https://")))
+          throw new Error("One or more recipes were missing their publisher source.");
+        setOptions(recipes.map(recipe=>({recipe,source:"published" as const})));
+        setMessage("Five published recipes imported with ingredients and summarized directions. Review or choose Try another for any meal; approve when ready.");
         return;
       }
       if(!Array.isArray(data.recipes) || data.recipes.length !== 5 || !data.recipes.every(isRecipe))
@@ -142,10 +144,37 @@ export default function MealRecommendations({
       setMessage(err instanceof Error ? err.message : "Could not generate recipes.");
     } finally { setBusy(false); }
   };
+  const tryAnotherPublished = async (slot:number) => {
+    const currentOption=options[slot];
+    if(!currentOption || replacing!==null || busy)return;
+    setReplacing(slot);
+    setMessage("");
+    try {
+      const token=await getToken();
+      if(!token)throw new Error("Sign in again to find another published recipe.");
+      const urls=options.flatMap(x=>x.recipe.sourceUrl?[x.recipe.sourceUrl]:[]);
+      const res=await fetch("/api/published-menu",{
+        method:"POST",
+        headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
+        body:JSON.stringify({householdId,slot,excludeUrls:urls,preferences,
+          history:history.slice(-4),current:current.map(r=>r.name)})
+      });
+      const data:{message?:string;recipes?:unknown[]}=await res.json();
+      if(!res.ok)throw new Error(data.message||"Could not find a different recipe.");
+      if(!Array.isArray(data.recipes)||data.recipes.length!==1||!isRecipe(data.recipes[0]))
+        throw new Error("Could not import an alternative with full ingredients.");
+      const recipe={...(data.recipes[0] as Recipe),category:groups[slot][0].category};
+      if(!recipe.sourceUrl)throw new Error("Publisher URL missing for this alternative.");
+      setOptions(previous=>previous.map((item,i)=>i===slot?{recipe,source:"published"}:item));
+      setMessage("Replaced one meal. The other four suggestions are unchanged.");
+    }catch(e){
+      setMessage(e instanceof Error?e.message:"Unable to replace this meal.");
+    }finally{setReplacing(null);}
+  };
   return <section className="panel recommendation-panel">
     <div className="section-heading">
       <h2>Weekly menu ideas</h2>
-      <p>Suggest five meals: one weekend breakfast, one Sunday supper and three weeknight dinners. Nothing changes until you approve the suggestions.</p>
+      <p>Suggest five meals: one weekend breakfast, one Sunday supper and three weeknight dinners. Published recipes include source links and imported ingredients; nothing changes until you approve.</p>
     </div>
     <div className="recommendation-settings">
       <label>Weeknight time limit
@@ -163,7 +192,7 @@ export default function MealRecommendations({
     </div>
     <div className="recommendation-actions">
       <label><input type="radio" checked={mode==="smart"} onChange={()=>setMode("smart")}/> Recommend from our recipes</label>
-      <label><input type="radio" checked={mode==="search"} onChange={()=>setMode("search")}/> Find published recipes with AI search</label>
+      <label><input type="radio" checked={mode==="search"} onChange={()=>setMode("search")}/> Find and import published recipes</label>
       <label><input type="radio" checked={mode==="AI"} onChange={()=>setMode("AI")}/> Create original recipes with AI</label>
       <button disabled={busy} onClick={()=>void generate()}>{busy?"Generating…":"Generate weekly ideas"}</button>
     </div>
@@ -180,15 +209,17 @@ export default function MealRecommendations({
     {options.length > 0 && <>
       <div className="recommendation-grid">
         {options.map(({recipe,source},i)=><article className="recommendation-card" key={i}>
-          <div className="line"><span className="tag">{groups[i][0].category}</span><small>{source === "AI"?"AI-generated":source==="saved"?"Family library":"Curated recipe"}</small></div>
+          <div className="line"><span className="tag">{groups[i][0].category}</span><small>{source === "AI"?"AI-generated":source==="published"?"Published recipe":source==="saved"?"Family library":"Curated recipe"}</small></div>
           <h3>{recipe.name}</h3><p>{recipe.description}</p><p><strong>{recipe.time} min · {recipe.servings} servings</strong></p>
+          {recipe.sourceUrl && <p className="published-source"><a href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">Original recipe: {recipe.sourceTitle ?? new URL(recipe.sourceUrl).hostname}</a></p>}
+          {source==="published" && <button className="secondary" disabled={replacing!==null||busy} onClick={()=>void tryAnotherPublished(i)}>{replacing===i?"Finding another…":"Try another published recipe"}</button>}
           <details><summary>Preview ingredients and steps</summary>
             <ul>{recipe.ingredients.map((ing,j)=><li key={j}>{ing.amount} — {ing.name}</li>)}</ul>
             <ol>{recipe.steps.map((step,j)=><li key={j}>{step}</li>)}</ol>
           </details>
         </article>)}
       </div>
-      <div className="actions"><button onClick={()=>{
+      <div className="actions"><button disabled={replacing!==null||busy} onClick={()=>{
         if(!window.confirm("Replace all five menu slots with these suggestions? Your pantry Have/Need choices will be reset."))return;
         onApply(options.map(o=>o.recipe));
         setOptions([]);
