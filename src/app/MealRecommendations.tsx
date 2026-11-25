@@ -91,7 +91,7 @@ const defaultNotes = "Two adults and three kids; adventurous family meals, varie
 export default function MealRecommendations({
   savedRecipes,current,history,have,preferences,onPreferences,onApply,getToken,householdId
 }: Props) {
-  const [options,setOptions] = useState<MenuOption[]>([]);
+  const [options,setOptions] = useState<(MenuOption|null)[]>([]);
   const [busy,setBusy] = useState(false);
   const [replacing,setReplacing] = useState<number|null>(null);
   const [message,setMessage] = useState("");
@@ -121,12 +121,28 @@ export default function MealRecommendations({
         body:JSON.stringify({householdId,preferences,history:history.slice(-4),current:current.map(r=>r.name)})
       });
       const data: {
-        message?:string;recipes?:unknown[];
+        message?:string;recipes?:unknown[];slots?:{slot:number;recipe:unknown|null}[];
         summary?:string;sources?:{title:string;url:string}[];sourceType?:string
       } = await response.json();
       if(!response.ok) throw new Error(data.message || "Recipe service was not available.");
       if(mode === "search") {
-        if(!Array.isArray(data.recipes) || data.recipes.length!==5 || !data.recipes.every(isRecipe))
+        if(!Array.isArray(data.slots) || data.slots.length!==5)
+          throw new Error("Published recipe results were incomplete. Please retry.");
+        const imported:(MenuOption|null)[]=groups.map((g,slot)=>{
+          const hit=data.slots?.find(x=>x.slot===slot);
+          if(!hit || !isRecipe(hit.recipe) || !hit.recipe.sourceUrl) return null;
+          return {recipe:{...hit.recipe,category:g[0].category},source:"published"};
+        });
+        setOptions(imported);
+        const successful=imported.filter(Boolean).length;
+        setMessage(successful===5
+          ? "All five published recipes are ready. Review them or choose Try another for any meal."
+          : successful
+            ? successful+" published recipes imported. Choose Try another on missing meal slots; successful recipes are preserved."
+            : "No complete publisher recipes could be extracted. Try another for an individual meal slot.");
+        return;
+      }
+      if(!Array.isArray(data.recipes) || data.recipes.length!==5 || !data.recipes.every(isRecipe))
           throw new Error("Not all five published recipes could be imported. No menu was changed.");
         const recipes=(data.recipes as Recipe[]).map((recipe,i)=>({...recipe,category:groups[i][0].category}));
         if(recipes.some(r=>!r.sourceUrl || !r.sourceUrl.startsWith("https://")))
@@ -145,25 +161,25 @@ export default function MealRecommendations({
     } finally { setBusy(false); }
   };
   const tryAnotherPublished = async (slot:number) => {
-    const currentOption=options[slot];
-    if(!currentOption || replacing!==null || busy)return;
+    if(slot<0 || slot>4 || replacing!==null || busy)return;
     setReplacing(slot);
     setMessage("");
     try {
       const token=await getToken();
       if(!token)throw new Error("Sign in again to find another published recipe.");
-      const urls=options.flatMap(x=>x.recipe.sourceUrl?[x.recipe.sourceUrl]:[]);
+      const urls=options.flatMap(x=>x?.recipe.sourceUrl?[x.recipe.sourceUrl]:[]);
       const res=await fetch("/api/published-menu",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
         body:JSON.stringify({householdId,slot,excludeUrls:urls,preferences,
           history:history.slice(-4),current:current.map(r=>r.name)})
       });
-      const data:{message?:string;recipes?:unknown[]}=await res.json();
+      const data:{message?:string;slots?:{slot:number;recipe:unknown|null}[]}=await res.json();
       if(!res.ok)throw new Error(data.message||"Could not find a different recipe.");
-      if(!Array.isArray(data.recipes)||data.recipes.length!==1||!isRecipe(data.recipes[0]))
-        throw new Error("Could not import an alternative with full ingredients.");
-      const recipe={...(data.recipes[0] as Recipe),category:groups[slot][0].category};
+      const incoming=data.slots?.find(x=>x.slot===slot)?.recipe;
+      if(!isRecipe(incoming))
+        throw new Error("No complete recipe was found for this meal. You can try another search.");
+      const recipe={...incoming,category:groups[slot][0].category};
       if(!recipe.sourceUrl)throw new Error("Publisher URL missing for this alternative.");
       setOptions(previous=>previous.map((item,i)=>i===slot?{recipe,source:"published"}:item));
       setMessage("Replaced one meal. The other four suggestions are unchanged.");
@@ -208,20 +224,34 @@ export default function MealRecommendations({
     </div>}
     {options.length > 0 && <>
       <div className="recommendation-grid">
-        {options.map(({recipe,source},i)=><article className="recommendation-card" key={i}>
-          <div className="line"><span className="tag">{groups[i][0].category}</span><small>{source === "AI"?"AI-generated":source==="published"?"Published recipe":source==="saved"?"Family library":"Curated recipe"}</small></div>
-          <h3>{recipe.name}</h3><p>{recipe.description}</p><p><strong>{recipe.time} min · {recipe.servings} servings</strong></p>
-          {recipe.sourceUrl && <p className="published-source"><a href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">Original recipe: {recipe.sourceTitle ?? new URL(recipe.sourceUrl).hostname}</a></p>}
-          {source==="published" && <button className="secondary" disabled={replacing!==null||busy} onClick={()=>void tryAnotherPublished(i)}>{replacing===i?"Finding another…":"Try another published recipe"}</button>}
-          <details><summary>Preview ingredients and steps</summary>
-            <ul>{recipe.ingredients.map((ing,j)=><li key={j}>{ing.amount} — {ing.name}</li>)}</ul>
-            <ol>{recipe.steps.map((step,j)=><li key={j}>{step}</li>)}</ol>
-          </details>
-        </article>)}
+        {options.map((option,i)=>{
+          if(!option)return <article className="recommendation-card" key={i}>
+            <div className="line"><span className="tag">{groups[i][0].category}</span><small>Needs a recipe</small></div>
+            <h3>Find a published recipe</h3>
+            <p>No complete recipe could be extracted for this slot. Other completed meals are preserved.</p>
+            <button className="secondary" disabled={replacing!==null||busy}
+              onClick={()=>void tryAnotherPublished(i)}>{replacing===i?"Searching…":"Try another published recipe"}</button>
+          </article>;
+          const {recipe,source}=option;
+          return <article className="recommendation-card" key={i}>
+            <div className="line"><span className="tag">{groups[i][0].category}</span>
+              <small>{source==="AI"?"AI-generated":source==="published"?"Published recipe":source==="saved"?"Family library":"Curated recipe"}</small>
+            </div>
+            <h3>{recipe.name}</h3><p>{recipe.description}</p>
+            <p><strong>{recipe.time} min · {recipe.servings} servings</strong></p>
+            {recipe.sourceUrl && <p className="published-source"><a href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer">Original recipe: {recipe.sourceTitle ?? new URL(recipe.sourceUrl).hostname}</a></p>}
+            {source==="published" && <button className="secondary" disabled={replacing!==null||busy}
+              onClick={()=>void tryAnotherPublished(i)}>{replacing===i?"Finding another…":"Try another published recipe"}</button>}
+            <details><summary>Preview ingredients and steps</summary>
+              <ul>{recipe.ingredients.map((ing,j)=><li key={j}>{ing.amount} — {ing.name}</li>)}</ul>
+              <ol>{recipe.steps.map((step,j)=><li key={j}>{step}</li>)}</ol>
+            </details>
+          </article>;
+        })}
       </div>
-      <div className="actions"><button disabled={replacing!==null||busy} onClick={()=>{
+      <div className="actions"><button disabled={replacing!==null||busy||options.some(x=>!x)} onClick={()=>{
         if(!window.confirm("Replace all five menu slots with these suggestions? Your pantry Have/Need choices will be reset."))return;
-        onApply(options.map(o=>o.recipe));
+        onApply(options.filter((o):o is MenuOption=>o!==null).map(o=>o.recipe));
         setOptions([]);
         setMessage("Five suggested meals applied. Review the menu before approving it.");
       }}>Use this suggested menu</button></div>
