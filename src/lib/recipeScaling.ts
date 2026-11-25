@@ -48,7 +48,7 @@ function compactNumber(n:number):string{
 function render(n:number,unit:string,detail:string,originalHasUnit:boolean):string{
   const useFraction=unit==="cup"||unit==="tbsp"||unit==="tsp"||unit==="pint"||unit==="quart";
   const number=useFraction?fraction(n):compactNumber(n);
-  const word=unit==="count"?"":unit==="fl oz"?"fl oz":unit+(plural.has(unit)&&n!==1?"s":"");
+  const word=unit==="count"?"":unit==="fl oz"?"fl oz":unit+(plural.has(unit)&&n>1?"s":"");
   return [number,originalHasUnit?word:"",detail].filter(Boolean).join(" ");
 }
 function wholeCount(name:string,unit:string):boolean{
