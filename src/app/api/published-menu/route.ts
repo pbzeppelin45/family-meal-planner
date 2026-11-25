@@ -243,13 +243,19 @@ export async function POST(req:NextRequest){
    return source?{slot,source}:null;
   }));
   const sources=found.filter((x):x is {slot:number;source:Source}=>x!==null);
-  if(sources.length!==targets.length)
-   return reply("Some searches returned roundups or pages without full ingredients. Please retry; the existing menu was not changed.",422);
-  const recipes=await fromGemini(sources,limit,avoid,controller.signal);
-  if(recipes.length!==targets.length)
-   return reply("Some published recipes couldn't be extracted with sufficient confidence. Nothing was applied; try another search.",422);
-  return NextResponse.json({recipes,sourceType:"Published recipes with extracted ingredients"},
-   {headers:{"Cache-Control":"no-store"}});
+  console.info("Published recipe search coverage",{requested:targets.length,usable:sources.length,missing:targets.filter(slot=>!sources.some(x=>x.slot===slot))});
+  const recipes=sources.length ? await fromGemini(sources,limit,avoid,controller.signal) : [];
+  const slotsResult=targets.map(slot=>({
+    slot,recipe:recipes.find(r=>r.category===CATEGORIES[slot])??null
+  }));
+  console.info("Published recipe extraction coverage",{requested:targets.length,imported:slotsResult.filter(x=>x.recipe).length});
+  return NextResponse.json({
+    slots:slotsResult,
+    message:slotsResult.some(x=>!x.recipe)
+      ?"Some publisher recipes could not be imported. Keep the available meals and choose Try another for each missing slot."
+      :"Published recipes imported.",
+    sourceType:"Published recipes with extracted ingredients"
+  },{headers:{"Cache-Control":"no-store"}});
  }catch(e){
   const msg=e instanceof Error?e.message:"Published recipe lookup failed.";
   console.error("Published recipe import error",{detail:msg.slice(0,180)});
