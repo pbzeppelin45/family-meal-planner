@@ -77,3 +77,10 @@ The app now has a server-side `POST /api/ai-menu` endpoint for generating comple
 - The generated menu requires explicit confirmation; changing preferences alone does not replace menu choices.
 - After approval, the previous approved menu appears in history and new weekly suggestions deprioritize repeats.
 - Avoid-list constraints never silently fall back to disallowed recipes in the smart recommender.
+
+## Gemini free-tier AI option (November 2026)
+The `/api/ai-menu` route now prefers `GEMINI_API_KEY` when present. It uses Google's REST `generateContent` endpoint with `responseMimeType: application/json` and `responseJsonSchema` and defaults to `gemini-2.5-flash-lite`. Override with `GEMINI_MEAL_MODEL` if that model is not available to a newly created project. If no Gemini key is configured but `OPENAI_API_KEY` is present, the route falls back to OpenAI's `gpt-5-nano` (override with `OPENAI_MEAL_MODEL`). Without either key, it returns an explicit not-configured response and does not consume the quota.
+The existing authentication, household membership, three-AI-menus-per-day limit, schema checks, ingredient exclusions, and explicit menu approval remain in place.
+
+**Configuration:** Visit https://aistudio.google.com/apikey, create a Gemini API key in an eligible project, then set `GEMINI_API_KEY` in Vercel Project Settings > Environment Variables for **Preview only** as a sensitive server-side variable. Never use `NEXT_PUBLIC_` for API keys. Redeploy the preview to populate the new key. Free-tier capacity is rate-limited, eligible models and project availability can change, and Google may use free-tier content to improve services; do not send highly sensitive personal details in preferences. Verify the per-key quota and applicable privacy terms in AI Studio. The keys are NOT configured by this change.
+Official pricing: https://ai.google.dev/gemini-api/docs/pricing and https://developers.openai.com/api/docs/models/gpt-5-nano
