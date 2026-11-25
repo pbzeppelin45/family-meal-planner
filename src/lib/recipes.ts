@@ -1,5 +1,5 @@
 export type Ingredient = { name: string; amount: string; pantry?: boolean };
-export type Recipe = { name: string; category: string; time: number; servings: number; description: string; ingredients: Ingredient[]; steps: string[] };
+export type Recipe = { name: string; category: string; time: number; servings: number; description: string; ingredients: Ingredient[]; steps: string[]; sourceUrl?: string; sourceTitle?: string; scalingBase?: {servings:number;ingredients:Ingredient[]}; scaleWarnings?: string[] };
 const I=(name:string,amount:string,pantry=false):Ingredient=>({name,amount,pantry});
 export const groups:Recipe[][]=[
 [
