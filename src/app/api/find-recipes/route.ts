@@ -1,27 +1,53 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+export const runtime="nodejs";
 
-export const runtime = "nodejs";
 type SearchSource={title:string;url:string};
+const slots=[
+  {label:"Weekend breakfast",terms:"creative breakfast brunch"},
+  {label:"Sunday supper",terms:"slow cooked Sunday family dinner"},
+  {label:"Weeknight 1",terms:"quick chicken vegetable dinner"},
+  {label:"Weeknight 2",terms:"quick fish or shrimp dinner"},
+  {label:"Weeknight 3",terms:"quick vegetarian or pork dinner"}
+];
 function safeUrl(value:unknown):string|null {
-  if(typeof value!=="string" || value.length>2000) return null;
-  try{
-    const url=new URL(value);
-    if(url.protocol!=="https:" || !url.hostname || url.username || url.password) return null;
-    return url.toString();
+  if(typeof value!=="string" || value.length>1800)return null;
+  try {
+    const u=new URL(value);
+    if(u.protocol!=="https:" || !u.hostname || u.username || u.password)return null;
+    return u.toString();
   }catch{return null;}
 }
-export async function POST(req:NextRequest) {
+function searchQueries(maxMinutes:number,avoid:string,notes:string,recent:string[]){
+  const excluded=avoid.split(/[,;\n]/).map(x=>x.trim().replace(/[^a-z\d -]/gi,"")).filter(Boolean).slice(0,8);
+  const excludedTerms=excluded.map(x=>"-"+x.replace(/\s+/g,"-")).join(" ");
+  const brief=notes.replace(/[^a-z\d\s,.:-]/gi," ").slice(0,120);
+  const history=recent.slice(-3).map(x=>x.slice(0,40));
+  return slots.map((slot,i)=>({
+    label:slot.label,
+    query:[slot.terms,"recipe","serves 5",i>=2?`${maxMinutes} minutes or less`:"",
+      brief,excludedTerms,history.length?"fresh ideas":""].filter(Boolean).join(" ").slice(0,300)
+  }));
+}
+function searchHandoff(queries:{label:string;query:string}[]){
+  return {
+    sourceType:"Search links (not verified recipe results)",
+    summary:"Live search is not connected. These links open targeted Google searches for each meal slot. They are search queries, not independently verified recipes. Review the publisher's recipe before adding it to the menu.",
+    sources:queries.map(x=>({
+      title:x.label+" — search published recipes",
+      url:"https://www.google.com/search?q="+encodeURIComponent(x.query)
+    }))
+  };
+}
+export async function POST(req:NextRequest){
   const reply=(message:string,status:number)=>NextResponse.json({message},{status,headers:{"Cache-Control":"no-store"}});
-  const key=process.env.GEMINI_API_KEY;
-  if(!key) return reply("Gemini search requires GEMINI_API_KEY in the Preview environment.",503);
-  const sbUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const sbKey=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if(!sbUrl || !sbKey) return reply("Cloud configuration is unavailable.",503);
+  const url=process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if(!url||!anon)return reply("Cloud configuration is unavailable.",503);
   const bearer=req.headers.get("authorization")??"";
-  if(!bearer.startsWith("Bearer ") || bearer.length>5000) return reply("Sign in to search recipes.",401);
+  if(!bearer.startsWith("Bearer ")||bearer.length>5000)return reply("Sign in to search published recipes.",401);
   const raw=await req.text();
-  if(raw.length>4000) return reply("Search request is too large.",413);
+  if(raw.length>4000)return reply("Search request is too large.",413);
   let input:{
     householdId?:string;
     preferences?:{maxWeeknightMinutes?:number;avoid?:string;notes?:string};
@@ -29,106 +55,78 @@ export async function POST(req:NextRequest) {
     current?:string[];
   };
   try{input=JSON.parse(raw)}catch{return reply("Invalid request.",400)}
-  if(!input.householdId || !/^[a-f0-9-]{36}$/i.test(input.householdId))
-    return reply("Missing family workspace.",400);
+  if(!input.householdId||!/^[a-f0-9-]{36}$/i.test(input.householdId))return reply("Missing family workspace.",400);
   const jwt=bearer.slice(7);
-  const db=createClient(sbUrl,sbKey,{global:{headers:{Authorization:"Bearer "+jwt}},
+  const db=createClient(url,anon,{global:{headers:{Authorization:"Bearer "+jwt}},
     auth:{persistSession:false,autoRefreshToken:false}});
   const {data:identity,error:authError}=await db.auth.getUser(jwt);
-  if(authError || !identity.user) return reply("Your sign-in has expired.",401);
-  const {data:member,error:memberError}=await db.from("family_members")
-    .select("household_id").eq("household_id",input.householdId)
-    .eq("user_id",identity.user.id).maybeSingle();
-  if(memberError || !member) return reply("Not authorized for this household.",403);
-
-  const preferences=input.preferences??{};
-  const max=Number(preferences.maxWeeknightMinutes);
-  const maxMinutes=[25,30,40,45,60].includes(max)?max:40;
-  const avoid=typeof preferences.avoid==="string"?preferences.avoid.slice(0,250):"";
-  const notes=typeof preferences.notes==="string"?preferences.notes.slice(0,500):"";
-  const history=Array.isArray(input.history)?input.history.slice(-4).flatMap(h=>
+  if(authError||!identity.user)return reply("Your sign-in has expired.",401);
+  const {data:member,error:memberError}=await db.from("family_members").select("household_id")
+    .eq("household_id",input.householdId).eq("user_id",identity.user.id).maybeSingle();
+  if(memberError||!member)return reply("Not authorized for this family.",403);
+  const pref=input.preferences??{};
+  const limit=Number(pref.maxWeeknightMinutes);
+  const maxMinutes=[25,30,40,45,60].includes(limit)?limit:40;
+  const avoid=typeof pref.avoid==="string"?pref.avoid.slice(0,250):"";
+  const notes=typeof pref.notes==="string"?pref.notes.slice(0,250):"";
+  const recent=Array.isArray(input.history)?input.history.slice(-3).flatMap(h=>
     Array.isArray(h.names)?h.names.filter(x=>typeof x==="string").slice(0,5):[]):[];
-  const current=Array.isArray(input.current)?input.current.filter(x=>typeof x==="string").slice(0,5):[];
-
-  const {error:quotaError}=await db.rpc("reserve_family_ai_generation",{p_household:input.householdId});
-  if(quotaError) return reply(quotaError.message.includes("DAILY_AI_LIMIT")
-    ?"Today's three AI searches/generations have been used. Try again tomorrow."
-    :"Unable to reserve a recipe search.",quotaError.message.includes("DAILY_AI_LIMIT")?429:403);
-
-  const prompt=`Find real, publicly published recipes on the web, DO NOT invent, reconstruct or rewrite a recipe.
-Use Google Search actively and cite actual recipe web pages, not generic category pages or search results.
-Suggest options for exactly five meal slots:
-1. Weekend breakfast for 5
-2. Sunday supper for 5-6, comfortable longer cooking
-3. Weeknight dinner for 5, approximately ${maxMinutes} minutes or less
-4. Weeknight dinner for 5, approximately ${maxMinutes} minutes or less
-5. Weeknight dinner for 5, approximately ${maxMinutes} minutes or less
-Family: adventurous tastes, two adults and three children.
-Ingredient exclusions: ${avoid || "none"}.
-Additional preferences: ${notes || "varied proteins, vegetables, well-tested recipes"}.
-Recently planned meals to avoid repeating: ${history.join("; ") || "none"}.
-Current meals: ${current.join("; ") || "none"}.
-Favor established cooking publications and clear recipe directions.
-For each slot, write the publisher, recipe title and why it fits, with citation.
-Only describe cooking time/servings if stated on the source; don't guess.
-Don't claim that ingredients or timing are verified if they haven't been read.
-If a slot lacks a trustworthy result, say so explicitly.
-Keep the output readable with five numbered slot descriptions and no full recipe text.`;
+  const queries=searchQueries(maxMinutes,avoid,notes,recent);
+  const handoff=searchHandoff(queries);
+  // Google Search grounding is not available on Gemini 3 free API projects.
+  // Without a dedicated search key, supply useful explicit search links; do not
+  // claim that any publisher result was checked or consume any AI-generation quota.
+  if(!process.env.TAVILY_API_KEY)
+    return NextResponse.json(handoff,{headers:{"Cache-Control":"no-store"}});
+  // Search quota is separate from original AI generation quota.
+  const {error:quotaError}=await db.rpc("reserve_family_recipe_search",{p_household:input.householdId});
+  if(quotaError)return reply(quotaError.message.includes("DAILY_SEARCH_LIMIT")
+    ?"Today's six published-recipe searches have been used. Try again tomorrow. Original-recipe generation remains available."
+    :"Unable to reserve published-recipe search.",quotaError.message.includes("DAILY_SEARCH_LIMIT")?429:403);
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),45000);
-  try{
-    const model=process.env.GEMINI_MEAL_MODEL||"gemini-3.5-flash-lite";
-    const response=await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent",{
+  const timer=setTimeout(()=>controller.abort(),35000);
+  try {
+    const results=await Promise.all(queries.map(async ({label,query})=>{
+      const res=await fetch("https://api.tavily.com/search",{
         method:"POST",signal:controller.signal,
-        headers:{"x-goog-api-key":key,"Content-Type":"application/json"},
-        body:JSON.stringify({
-          contents:[{role:"user",parts:[{text:prompt}]}],
-          tools:[{googleSearch:{}}],
-          generationConfig:{maxOutputTokens:3000,temperature:0.35}
-        })
-      }
-    );
-    if(!response.ok){
-      let code="";
-      try {
-        const e=await response.json() as {error?:{status?:string}};
-        code=e.error?.status??"";
-      }catch{}
-      console.error("Grounded recipe search failed",{httpStatus:response.status,providerStatus:code,model});
-      if(response.status===429)return reply("Google Search grounding is rate-limited for this project.",429);
-      if(response.status===400)return reply("The model rejected Google Search grounding. Try a supported model or check AI Studio model access.",502);
-      if(response.status===401||response.status===403)return reply("Google Search grounding isn't authorized for this API key or project.",502);
-      if(response.status===404)return reply("This Gemini model is unavailable for search grounding in the project.",502);
-      return reply("Recipe search provider returned HTTP "+response.status+".",502);
-    }
-    const value=await response.json() as {
-      candidates?:{
-        content?:{parts?:{text?:string}[]};
-        groundingMetadata?:{
-          groundingChunks?:{web?:{uri?:string;title?:string}}[];
-          webSearchQueries?:string[];
-        }
-      }[]
-    };
-    const candidate=value.candidates?.[0];
-    const summary=candidate?.content?.parts?.map(p=>p.text??"").join("").trim().slice(0,10000)??"";
-    // The model can suggest links in prose. Only link sources that Google's
-    // grounding metadata actually returned, never model-written URLs.
-    const unique=new Map<string,SearchSource>();
-    for(const chunk of candidate?.groundingMetadata?.groundingChunks??[]){
-      const url=safeUrl(chunk.web?.uri);
-      if(!url)continue;
-      if(!unique.has(url)) unique.set(url,{
-        url,title:(chunk.web?.title??new URL(url).hostname).slice(0,180)
+        headers:{"Authorization":"Bearer "+process.env.TAVILY_API_KEY!,
+          "Content-Type":"application/json"},
+        body:JSON.stringify({query,search_depth:"basic",max_results:4,
+          include_answer:false,include_raw_content:false,include_images:false,topic:"general"})
       });
+      if(!res.ok) {
+        console.error("Recipe search provider error",{status:res.status,label});
+        return {label,results:[] as {title:string;url:string;content:string}[]};
+      }
+      const parsed=await res.json() as {results?:{title?:string;url?:string;content?:string}[]};
+      return {label,results:(parsed.results??[]).flatMap(r=>{
+        const u=safeUrl(r.url);
+        if(!u)return [];
+        return [{title:(r.title??new URL(u).hostname).slice(0,160),url:u,
+          content:(r.content??"").slice(0,180)}];
+      })};
+    }));
+    const sources:SearchSource[]=[];
+    const lines:string[]=[];
+    const seen=new Set<string>();
+    for(const group of results){
+      const first=group.results.find(r=>!seen.has(r.url));
+      if(first)lines.push(group.label+": "+first.title+" (see linked publisher page; time and ingredient exclusions not yet verified)");
+      else lines.push(group.label+": no independent recipe result returned; use the search link below.");
+      for(const result of group.results){
+        if(seen.has(result.url))continue;
+        seen.add(result.url);
+        sources.push({title:group.label+" — "+result.title,url:result.url});
+      }
     }
-    const sources=[...unique.values()].slice(0,18);
-    if(!summary || sources.length===0)
-      return reply("Google did not return verifiable recipe sources. No links were fabricated. Try refining your preferences.",502);
-    return NextResponse.json({summary,sources,sourceType:"Google Search grounding"},
-      {headers:{"Cache-Control":"no-store"}});
+    if(!sources.length)return NextResponse.json(handoff,{headers:{"Cache-Control":"no-store"}});
+    return NextResponse.json({
+      sourceType:"Tavily web search — publisher links",
+      summary:lines.join("\n"),
+      sources:sources.slice(0,20)
+    },{headers:{"Cache-Control":"no-store"}});
   }catch{
-    return reply("Recipe search timed out; your menu was not changed.",504);
-  }finally{clearTimeout(timer)}
+    console.error("Recipe search provider failed or timed out");
+    return NextResponse.json(handoff,{headers:{"Cache-Control":"no-store"}});
+  }finally{clearTimeout(timer);}
 }
