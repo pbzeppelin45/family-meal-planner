@@ -281,6 +281,29 @@ export async function POST(req:NextRequest){
   const sources=found.filter((x):x is {slot:number;source:Source}=>x!==null);
   console.info("Published recipe search coverage",{requested:targets.length,usable:sources.length,missing:targets.filter(slot=>!sources.some(x=>x.slot===slot))});
   const recipes=sources.length ? await fromGemini(sources,limit,avoid,controller.signal) : [];
+  const unfilled=targets.filter(slot=>!recipes.some(r=>r.category===CATEGORIES[slot]));
+  if(unfilled.length){
+   try{
+    const alreadyUsed=new Set([...exclude,...sources.map(x=>x.source.url)]);
+    const alternatives=await Promise.all(unfilled.map(async slot=>{
+      const source=await searchSlot(slot,limit,avoid,notes,alreadyUsed,controller.signal,variant+1);
+      return source?{slot,source}:null;
+    }));
+    const alternateSources=alternatives.filter((x):x is {slot:number;source:Source}=>x!==null);
+    if(alternateSources.length){
+      const extracted=await fromGemini(alternateSources,limit,avoid,controller.signal);
+      recipes.push(...extracted);
+    }
+    console.info("Published recipe automatic recovery",{
+      missingBefore:unfilled.length,alternativeSources:alternateSources.length,
+      missingAfter:targets.filter(slot=>!recipes.some(r=>r.category===CATEGORIES[slot])).length
+    });
+   }catch(error){
+    console.warn("Published recipe recovery attempt unavailable",{
+      reason:error instanceof Error?error.message.slice(0,90):"unknown"
+    });
+   }
+  }
   const slotsResult=targets.map(slot=>({
     slot,recipe:recipes.find(r=>r.category===CATEGORIES[slot])??null
   }));
