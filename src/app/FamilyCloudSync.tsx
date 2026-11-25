@@ -4,8 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import { type Recipe } from "../lib/recipes";
 import FamilyRecipeLibrary from "./FamilyRecipeLibrary";
-import MealRecommendations, { type MenuPreferences, type MenuHistory } from "./MealRecommendations";
-import { groups } from "../lib/recipes";
+import type { MenuPreferences, MenuHistory } from "./MealRecommendations";
 
 export type FamilyPlanSnapshot = {
   step: number;
@@ -22,6 +21,11 @@ type PlanRow = { state: unknown; revision: number };
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const client: SupabaseClient | null = url && key ? createClient(url, key) : null;
+export async function getFamilyAccessToken():Promise<string|null>{
+  if(!client)return null;
+  const {data}=await client.auth.getSession();
+  return data.session?.access_token??null;
+}
 
 function validPlan(x: unknown): x is FamilyPlanSnapshot {
   if (!x || typeof x !== "object") return false;
@@ -36,13 +40,13 @@ function message(e: unknown): string {
 }
 
 export default function FamilyCloudSync({
-  snapshot, onLoad, selected, onUseRecipe, onApplyMenu
+  snapshot, onLoad, selected, onUseRecipe, onMenuContext
 }: {
   snapshot: FamilyPlanSnapshot;
   onLoad: (next: FamilyPlanSnapshot) => void;
   selected: Recipe[];
   onUseRecipe: (recipe: Recipe, slot: number) => void;
-  onApplyMenu: (recipes: Recipe[]) => void;
+  onMenuContext: (context:{householdId:string;savedRecipes:Recipe[]})=>void;
 }) {
   const [user, setUser] = useState<User | null>(null);
   const [households, setHouseholds] = useState<Household[]>([]);
@@ -59,6 +63,14 @@ export default function FamilyCloudSync({
   const [conflict, setConflict] = useState(false);
   const [recipeRefresh, setRecipeRefresh] = useState(0);
   const [recommendedLibrary, setRecommendedLibrary] = useState<Recipe[]>([]);
+  const contextCallback=useRef(onMenuContext);
+  contextCallback.current=onMenuContext;
+  useEffect(()=>{
+    contextCallback.current({
+      householdId:user&&activeId?activeId:"",
+      savedRecipes:user&&activeId?recommendedLibrary:[]
+    });
+  },[user?.id,activeId,recommendedLibrary]);
   const [retryTick, setRetryTick] = useState(0);
   const snapshotRef = useRef(snapshot);
   snapshotRef.current = snapshot;
@@ -365,20 +377,6 @@ export default function FamilyCloudSync({
           </div>
           {inviteCode && <p>Invitation code (expires in 7 days): <code>{inviteCode}</code></p>}
         </details>
-        <MealRecommendations
-          savedRecipes={recommendedLibrary}
-          current={groups.map((g,i)=>snapshot.customRecipes?.[i] ?? g[snapshot.choices[i]] ?? g[0])}
-          history={snapshot.mealHistory ?? []}
-          have={snapshot.have}
-          householdId={activeId}
-          preferences={snapshot.preferences ?? {maxWeeknightMinutes:40,avoid:"",notes:"Two adults and three kids; adventurous family meals."}}
-          onPreferences={preferences=>onLoad({...snapshot,preferences})}
-          onApply={onApplyMenu}
-          getToken={async()=> {
-            const {data}=await client.auth.getSession();
-            return data.session?.access_token ?? null;
-          }}
-        />
         <FamilyRecipeLibrary client={client} householdId={activeId}
           selectedRecipes={selected} refreshKey={recipeRefresh}
           onUse={onUseRecipe} onChanged={() => setRecipeRefresh(x => x + 1)}/>
