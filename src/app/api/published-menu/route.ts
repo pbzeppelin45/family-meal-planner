@@ -47,12 +47,14 @@ function individualRecipe(hit:SearchHit){
  const roundups=/\b(?:\d{2,3}\+?\s+(?:best|easy|quick|simple|healthy|dinner|breakfast|recipes?|ideas)|collection|roundup|recipe ideas|recipes to try|our favorite recipes|meal planning)\b/i;
  if(excluded.test(url)||roundups.test(title))return false;
  if(title.length>170||title.length<12)return false;
+ // A single recipe page, not a collection or video with one ingredient list somewhere.
+ if(/\b(?:recipes|dishes|ideas|collections|roundups|menus)\b/i.test(title))return false;
  return true;
 }
 function extractCore(raw:string):string {
  const clean=raw.replace(/<script[\s\S]*?<\/script>/gi," ")
   .replace(/\u0000/g,"").replace(/[ \t]{3,}/g," ").slice(0,85000);
- const start=clean.search(/(?:^|\n)\s*#{0,5}\s*(?:recipe\s+)?ingredients\b/im);
+ const start=clean.search(/(?:^|\n)\s*#{0,5}\s*\*{0,2}(?:recipe\s+)?ingredients\b/im);
  const instructions=start>=0 ? clean.slice(start).search(/(?:^|\n)\s*#{0,5}\s*(?:instructions|directions|method|how to make|preparation|steps)\b/im) : -1;
  if(start<0 || instructions<0)return "";
  const header=clean.slice(0,Math.min(1100,start));
