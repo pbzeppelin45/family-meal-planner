@@ -101,3 +101,6 @@ Gemini 3.x Google Search grounding is not available for this project's free-tier
 - Live search uses a separate daily limit of six searches per signed-in household member, enforced by `reserve_family_recipe_search`. This does not affect the three daily original-recipe generations, and never introduces a public writable usage table.
 - Tavily results show actual search URLs and titles, but do not claim time, ingredient exclusions or full recipe steps were verified. Search failures return honest Google search links as fallback.
 - Published recipe import remains future work; manually review linked publisher pages.
+
+## Tavily API activation
+TAVILY_API_KEY has been added as a Vercel Preview sensitive environment variable. Trigger a new `feature/shared-family-data` preview build to load the variable into `/api/find-recipes`; previous preview deployments do not automatically inherit later environment changes. Do not expose or commit the key itself.
