@@ -87,3 +87,8 @@ Official pricing: https://ai.google.dev/gemini-api/docs/pricing and https://deve
 
 ### Gemini activation verification
 On 2026-11-24, the Vercel project's Preview environment showed a sensitive `GEMINI_API_KEY`. A fresh feature-branch deployment is required to apply the variable to the running server function. The key must remain server-only; don't paste its value into GitHub or client code.
+
+## Published recipe discovery mode
+The **Weekly menu ideas** UI now has three distinct modes: **Recommend from our recipes**, **Find published recipes with AI search**, and **Create original recipes with AI**.
+The new `POST /api/find-recipes` endpoint uses Gemini's Google Search grounding tool to find published recipe suggestions, collects citations only from `candidates[0].groundingMetadata.groundingChunks[].web`, and returns a brief five-meal summary plus clickable source links. It does **not** synthesize full ingredient lists or import scraped instructions: the user must visit and review the original site. No remote sources are silently treated as verified full recipes. Search uses the same authenticated household access, shared three-AI-requests-per-day quota, model, and Preview-only key as original generation. Google's search-grounding tool may have separate eligibility or billing limits; verify free-tier eligibility before assuming grounded requests are free.
+Future work: recipe-page extraction with publisher attribution and permission-conscious ingredient/step import, preferably using Schema.org Recipe JSON-LD, followed by user approval.
