@@ -84,3 +84,6 @@ The existing authentication, household membership, three-AI-menus-per-day limit,
 
 **Configuration:** Visit https://aistudio.google.com/apikey, create a Gemini API key in an eligible project, then set `GEMINI_API_KEY` in Vercel Project Settings > Environment Variables for **Preview only** as a sensitive server-side variable. Never use `NEXT_PUBLIC_` for API keys. Redeploy the preview to populate the new key. Free-tier capacity is rate-limited, eligible models and project availability can change, and Google may use free-tier content to improve services; do not send highly sensitive personal details in preferences. Verify the per-key quota and applicable privacy terms in AI Studio. The keys are NOT configured by this change.
 Official pricing: https://ai.google.dev/gemini-api/docs/pricing and https://developers.openai.com/api/docs/models/gpt-5-nano
+
+### Gemini activation verification
+On 2026-11-24, the Vercel project's Preview environment showed a sensitive `GEMINI_API_KEY`. A fresh feature-branch deployment is required to apply the variable to the running server function. The key must remain server-only; don't paste its value into GitHub or client code.
