@@ -90,7 +90,7 @@ const displayUnit:Record<string,string> = {
 };
 function formatUnit(amount:number,unit:string,detail:string):string {
   const base=displayUnit[unit]??unit;
-  const plural = amount!==1 && ["cup","clove","head","can","bunch"].includes(unit) ? "s":"";
+  const plural = amount>1 && ["cup","clove","head","can","bunch"].includes(unit) ? "s":"";
   return [tidy(amount,unit), unit==="count"?"":base+plural, detail].filter(Boolean).join(" ");
 }
 export function combineQuantities(amounts: string[]): string {
