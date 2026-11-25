@@ -98,3 +98,11 @@
  .meal-card-actions{flex-direction:column;align-items:stretch}
  .meal-card-actions select,.meal-card-actions button{width:100%}
 }
+
+.servings-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:12px 0 4px}
+.servings-toolbar button{font-size:12px;padding:8px 11px}
+.servings-toolbar .servings-ready{font-size:12px;font-weight:650;color:#276b46}
+.servings-toolbar .servings-reset{background:transparent;color:#35654a;padding:7px;border:1px solid #d2e3d8}
+.scale-warnings{border-radius:8px;background:#fff8e8;border:1px solid #edddbc;padding:10px;margin-top:9px;font-size:12px}
+.scale-warnings summary{cursor:pointer;font-weight:700;color:#805b1f}
+.scale-warnings li{margin-top:5px}
