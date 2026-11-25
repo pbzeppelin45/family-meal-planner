@@ -57,8 +57,12 @@ function extractCore(raw:string):string {
  const start=clean.search(/(?:^|\n)\s*(?:#{1,5}\s*|\*{2})?(?:recipe\s+)?ingredients\b/im);
  const instructions=start>=0 ? clean.slice(start).search(/(?:^|\n)\s*(?:#{1,5}\s*|\*{2})?(?:instructions|directions|method|how to make|preparation|steps)\b/im) : -1;
  if(start<0 || instructions<0)return "";
- const header=clean.slice(0,Math.min(1800,start));
- return (header+"\n"+clean.slice(start,Math.min(clean.length,start+9800))).slice(0,11000);
+ const header=clean.slice(0,Math.min(1400,start));
+ const directionStart=start+instructions;
+ // Preserve ingredient and direction sections even when separated by long articles.
+ const ingredientText=clean.slice(start,Math.min(directionStart,start+5200));
+ const directionText=clean.slice(directionStart,Math.min(clean.length,directionStart+6500));
+ return (header+"\n"+ingredientText+"\n"+directionText).slice(0,13500);
 }
 function validRecipe(r:unknown):r is Extracted{
  if(!r||typeof r!=="object")return false;
