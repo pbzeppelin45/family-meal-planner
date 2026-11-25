@@ -52,3 +52,11 @@
 .shopping-row .shopping-used{color:#84948a;font-size:12px}
 .shopping-row button{flex-shrink:0;font-size:12px}
 @media(max-width:700px){.shopping-row{align-items:flex-start}.shopping-summary{flex-wrap:wrap}}
+
+.source-results{margin-top:20px;border-top:1px solid #d8e6dd;padding-top:18px}
+.source-results h3{margin:6px 0 10px}
+.source-results .source-disclaimer{font-size:13px;color:#566c5d}
+.source-summary{white-space:pre-wrap;line-height:1.6;background:#fff;border:1px solid #dde9e0;padding:16px;border-radius:11px;font-size:14px}
+.source-links{display:grid;gap:9px;list-style:none;margin:0;padding:0}
+.source-links li{border:1px solid #e0eae3;border-radius:10px;padding:10px 12px;background:white}
+.source-links a{color:#1e684a;overflow-wrap:anywhere}
