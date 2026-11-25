@@ -38,8 +38,8 @@ function validRecipe(x:unknown):x is GeneratedRecipe{
 export async function POST(req:NextRequest) {
   const responseHeaders={"Cache-Control":"no-store"};
   const reply=(message:string,status:number)=>NextResponse.json({message},{status,headers:responseHeaders});
-  const apiKey=process.env.OPENAI_API_KEY;
-  if(!apiKey) return reply("AI generation is not configured yet. Select 'Recommend from our recipes' for now.",503);
+  const provider = process.env.GEMINI_API_KEY ? "gemini" : process.env.OPENAI_API_KEY ? "openai" : null;
+  if(!provider) return reply("AI generation is not connected yet. Add a Gemini API key (free-tier eligible) or OpenAI API key in Vercel.",503);
   const sbUrl=process.env.NEXT_PUBLIC_SUPABASE_URL;
   const sbKey=process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if(!sbUrl||!sbKey) return reply("Cloud configuration is unavailable.",503);
@@ -89,23 +89,46 @@ No raw flour/egg preparation instructions without appropriate cooking. No allerg
   const controller=new AbortController();
   const timeout=setTimeout(()=>controller.abort(),45000);
   try{
-    const result=await fetch("https://api.openai.com/v1/responses",{
-      method:"POST",signal:controller.signal,
-      headers:{"Authorization":"Bearer "+apiKey,"Content-Type":"application/json"},
-      body:JSON.stringify({
-        model:process.env.OPENAI_MEAL_MODEL||"gpt-5-mini",
-        store:false, max_output_tokens:3900,
-        input:[{role:"system",content:instructions},{role:"user",content:"Generate the five recipes now."}],
-        text:{format:{type:"json_schema",name:"family_week_menu",strict:true,schema:recipeSchema}}
-      })
-    });
-    if(!result.ok) {
-      // Do not expose private API provider error details to the client.
-      return reply("The AI recipe service is temporarily unavailable.",502);
+    // Prefer Google's free-tier eligible Gemini key; OpenAI remains a low-cost fallback.
+    let output: string | undefined;
+    if(provider==="gemini") {
+      const model=process.env.GEMINI_MEAL_MODEL || "gemini-2.5-flash-lite";
+      const result=await fetch(
+        "https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent",{
+        method:"POST",signal:controller.signal,
+        headers:{"x-goog-api-key":process.env.GEMINI_API_KEY!,"Content-Type":"application/json"},
+        body:JSON.stringify({
+          systemInstruction:{parts:[{text:instructions}]},
+          contents:[{role:"user",parts:[{text:"Generate exactly five fully specified recipes for this family."}]}],
+          generationConfig:{
+            responseMimeType:"application/json",
+            responseJsonSchema:recipeSchema,
+            maxOutputTokens:6000,
+            temperature:0.8
+          }
+        })
+      });
+      if(!result.ok) {
+        if(result.status===429) return reply("The free AI tier is rate-limited. Try again later; no menu was changed.",429);
+        return reply("Gemini generation is unavailable for this key or model. Check model access and quotas in Google AI Studio.",502);
+      }
+      const value=await result.json() as {candidates?:{content?:{parts?:{text?:string}[]}}[]};
+      output=value.candidates?.[0]?.content?.parts?.map(p=>p.text??"").join("");
+    } else {
+      const result=await fetch("https://api.openai.com/v1/responses",{
+        method:"POST",signal:controller.signal,
+        headers:{"Authorization":"Bearer "+process.env.OPENAI_API_KEY!,"Content-Type":"application/json"},
+        body:JSON.stringify({
+          model:process.env.OPENAI_MEAL_MODEL||"gpt-5-nano",
+          store:false, max_output_tokens:6000,
+          input:[{role:"system",content:instructions},{role:"user",content:"Generate the five recipes now."}],
+          text:{format:{type:"json_schema",name:"family_week_menu",strict:true,schema:recipeSchema}}
+        })
+      });
+      if(!result.ok) return reply("The OpenAI API is unavailable. Check API billing and model access.",502);
+      const value=await result.json() as {output?:{content?:{type?:string;text?:string}[]}[]};
+      output=value.output?.flatMap(o=>o.content??[]).find(c=>c.type==="output_text")?.text;
     }
-    const value:unknown=await result.json();
-    const data=value as {output?:{content?:{type?:string;text?:string}[]}[]};
-    const output=data.output?.flatMap(o=>o.content??[]).find(c=>c.type==="output_text")?.text;
     if(!output) return reply("The AI service did not return usable recipes.",502);
     let parsed:unknown;
     try{parsed=JSON.parse(output)}catch{return reply("The AI response was incomplete.",502)}
