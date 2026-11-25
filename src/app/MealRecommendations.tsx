@@ -94,6 +94,7 @@ export default function MealRecommendations({
   const [options,setOptions] = useState<(MenuOption|null)[]>([]);
   const [busy,setBusy] = useState(false);
   const [replacing,setReplacing] = useState<number|null>(null);
+  const [searchVariants,setSearchVariants] = useState<Record<number,number>>({});
   const [message,setMessage] = useState("");
   const [mode,setMode] = useState<"smart" | "search" | "AI">("smart");
   const [found,setFound] = useState<{summary:string;sources:{url:string;title:string}[]}|null>(null);
@@ -105,6 +106,7 @@ export default function MealRecommendations({
     setMessage("");
     setOptions([]);
     setFound(null);
+    setSearchVariants({});
     if(mode === "smart") {
       if(candidates.length!==5){setOptions([]);setMessage("Not enough recipes match these exclusions. Adjust them or use AI to generate alternatives.");return;}
       setOptions(candidates);
@@ -154,6 +156,8 @@ export default function MealRecommendations({
   const tryAnotherPublished = async (slot:number) => {
     if(slot<0 || slot>4 || replacing!==null || busy)return;
     setReplacing(slot);
+    const nextVariant=(searchVariants[slot]??0)+1;
+    setSearchVariants(previous=>({...previous,[slot]:nextVariant}));
     setMessage("");
     try {
       const token=await getToken();
@@ -162,7 +166,7 @@ export default function MealRecommendations({
       const res=await fetch("/api/published-menu",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
-        body:JSON.stringify({householdId,slot,excludeUrls:urls,preferences,
+        body:JSON.stringify({householdId,slot,variant:nextVariant,excludeUrls:urls,preferences,
           history:history.slice(-4),current:current.map(r=>r.name)})
       });
       const data:{message?:string;slots?:{slot:number;recipe:unknown|null}[]}=await res.json();
