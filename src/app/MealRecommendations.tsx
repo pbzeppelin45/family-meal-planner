@@ -1,6 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { groups, type Recipe } from "../lib/recipes";
+import {scaleRecipe} from "../lib/recipeScaling";
 
 export type MenuPreferences = {
   maxWeeknightMinutes:number;
@@ -198,6 +199,18 @@ export default function MealRecommendations({
     }catch(err){setMessage(err instanceof Error?err.message:"Unable to replace this meal.");}
     finally{setReplacing(null);}
   };
+  const changeServings=(slot:number,target:number)=>{
+    const option=displayed[slot];
+    if(!option)return;
+    const result=scaleRecipe(option.recipe,target);
+    if(result.recipe===option.recipe&&result.warnings.length){
+      setMessage(result.warnings.join("; "));return;
+    }
+    setDraft(displayed.map((item,i)=>i===slot?{...option,recipe:result.recipe}:item));
+    setMessage(result.warnings.length
+      ?labels[slot]+" scaled to "+target+" servings. Review unscaled quantities listed in its card."
+      :labels[slot]+" scaled to "+target+" servings. Ingredient amounts and shopping quantities have been updated.");
+  };
   const approve=()=>{
     if(missing||chosenCount===0||busy||replacing!==null)return;
     const recipes=displayed.map((option,i)=>option?.recipe??current[i]);
@@ -280,6 +293,18 @@ export default function MealRecommendations({
             {option?.source==="AI"&&<small>AI original</small>}
             {option?.source==="saved"&&<small>Family library</small>}
           </div>
+          <div className="servings-toolbar">
+            {recipe.servings!==5?<button type="button" className="secondary" onClick={()=>changeServings(slot,5)}
+              disabled={busy||replacing!==null}>Scale to 5 servings</button>:<span className="servings-ready">✓ Sized for five</span>}
+            {recipe.scalingBase&&<button type="button" className="servings-reset"
+              onClick={()=>changeServings(slot,recipe.scalingBase!.servings)} disabled={busy||replacing!==null}>
+              Restore original ({recipe.scalingBase.servings})
+            </button>}
+          </div>
+          {recipe.scaleWarnings&&recipe.scaleWarnings.length>0&&<details className="scale-warnings">
+            <summary>Review {recipe.scaleWarnings.length} unscaled ingredient(s)</summary>
+            <ul>{recipe.scaleWarnings.map((note,i)=><li key={i}>{note}</li>)}</ul>
+          </details>}
           <details className="meal-preview"><summary>Ingredients and directions</summary>
             <ul>{recipe.ingredients.map((item,i)=><li key={i}>{item.amount} — {item.name}</li>)}</ul>
             <ol>{recipe.steps.map((step,i)=><li key={i}>{step}</li>)}</ol>
