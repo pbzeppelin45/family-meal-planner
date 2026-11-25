@@ -115,3 +115,12 @@ TAVILY_API_KEY has been added as a Vercel Preview sensitive environment variable
 - One initial menu request or one per-slot replacement uses one of the household member's six daily published-recipe *search attempts*. This is separate from the original AI menu-generation quota. Tavily free credits and Gemini free-tier rate limits still apply.
 - Acceptance tests: genuine published source links for every recipe; ingredients and step summaries present; swapping slot 2 changes only that slot; applying replaces the weekly menu; grocery list reflects imported quantities; legacy original AI mode remains functional.
 - Search-backed extraction needs its first live authenticated browser acceptance test to confirm external provider responses match the configured account's actual quotas and outputs.
+
+## Unified meal-selection UX (2026-11-24)
+- The original **Choose your meals** step is now the only menu-editing surface.
+- Its source selector offers **Stored recipes**, **Find published recipes**, and **Create with AI**. All three fill the same five meal cards with their provenance (publisher links where available), ingredient/step previews, Include checkboxes, and per-meal substitutions.
+- Newly generated suggestions stay in a local unapproved draft until **Approve menu** is selected; the user's approved family plan remains intact while evaluating suggestions. Missing imported recipes appear as placeholder cards that can be retried or manually replaced with stored recipes; skipped missing slots do not block approval.
+- The family cloud section no longer displays a second **Weekly menu ideas** panel. It still manages email login, household invitations, sync status, and the persistent recipe library.
+- The common approval action records menu history, updates the shared plan, and advances to pantry inventory; grocery list construction is unchanged.
+- Published-recipe searches and AI creation require a signed-in household; stored recipe recommendations are available without API usage.
+- Test: five initial cards display, source selection fills the same cards, per-slot swaps preserve other cards, discarding a draft restores the existing approved menu, approval advances to pantry and syncs, and the page contains no second menu section.
