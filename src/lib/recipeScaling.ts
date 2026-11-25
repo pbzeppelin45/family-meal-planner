@@ -22,16 +22,17 @@ const roundCeil=(value:number,step:number)=>Math.ceil((value-1e-9)/step)*step;
 function numericPrefix(text:string):Parsed|null{
   // Accept decimals, common fractions, unicode fractions and mixed numbers.
   const trimmed=text.trimStart();
-  const pattern=/^(\d+(?:\.\d+)?)(?:\s*[- ]\s*(\d+)\/(\d+)|\s*([½¼¾⅓⅔⅛⅜⅝⅞]))?|^(\d+)\/(\d+)|^([½¼¾⅓⅔⅛⅜⅝⅞])/;
-  const match=trimmed.match(pattern);
+  const mixed=trimmed.match(/^(\d+)\s*[- ]\s*(\d+)\/(\d+)/);
+  const fraction=trimmed.match(/^(\d+)\/(\d+)/);
+  const unicode=trimmed.match(/^(\d+)?\s*([½¼¾⅓⅔⅛⅜⅝⅞])/);
+  const decimal=trimmed.match(/^\d+(?:\.\d+)?/);
+  const match=mixed??fraction??unicode??decimal;
   if(!match)return null;
   let n=0;
-  if(match[1]){
-    n=Number(match[1]);
-    if(match[2]&&match[3])n+=Number(match[2])/Number(match[3]);
-    if(match[4])n+=glyphs[match[4]];
-  }else if(match[5]&&match[6])n=Number(match[5])/Number(match[6]);
-  else if(match[7])n=glyphs[match[7]];
+  if(mixed)n=Number(mixed[1])+Number(mixed[2])/Number(mixed[3]);
+  else if(fraction)n=Number(fraction[1])/Number(fraction[2]);
+  else if(unicode)n=Number(unicode[1]??0)+glyphs[unicode[2]];
+  else n=Number(match[0]);
   if(!Number.isFinite(n)||n<=0)return null;
   return {value:n,end:text.length-trimmed.length+match[0].length};
 }
@@ -90,7 +91,7 @@ export function scaleAmount(amount:string,ingredientName:string,ratio:number):{
  // gram/ml use whole units, and countable produce/eggs/packs must stay whole.
  const increment=wholeCount(ingredientName,unit)?1:
    unit==="g"||unit==="ml"?1:
-   unit==="kg"||unit==="l"?0.01:0.25;
+   unit==="kg"||unit==="l"?0.01:unit==="count"?1:0.25;
  const rounded=roundCeil(scaled,increment);
  return {amount:render(rounded,unit,tail,unit!=="count")};
 }
