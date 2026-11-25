@@ -163,8 +163,8 @@ export default function MealRecommendations({
   const replaceLocal=(slot:number,picked?:Recipe)=>{
     const choices=storedCandidates(slot,savedRecipes,preferences);
     const actual=displayed[slot]?.recipe;
-    const options=choices.filter(x=>norm(x.name)!==norm(actual?.name??""));
-    const next=picked??options[0];
+    const currentIndex=choices.findIndex(x=>norm(x.name)===norm(actual?.name??""));
+    const next=picked??choices[(currentIndex+1+choices.length)%choices.length];
     if(!next){setMessage("No other stored recipes match these preferences for this meal.");return;}
     const replacement:MenuOption={recipe:{...next,category:groups[slot][0].category},
       source:savedRecipes.some(x=>norm(x.name)===norm(next.name))?"saved":"built-in"};
@@ -200,9 +200,6 @@ export default function MealRecommendations({
   };
   const approve=()=>{
     if(missing||chosenCount===0||busy||replacing!==null)return;
-    if(draft && draft.some((x,i)=>!x&&!included[i])) {
-      // Keep existing recipes in skipped slots, without asking the user to resolve them.
-    }
     const recipes=displayed.map((option,i)=>option?.recipe??current[i]);
     if(!recipes.every(validRecipe)){setMessage("A meal is missing required ingredients or instructions.");return;}
     onApprove(recipes,included);
@@ -295,7 +292,7 @@ export default function MealRecommendations({
           <select aria-label={"Choose saved recipe for "+category} defaultValue=""
             key={slot+"-"+(draft?"draft":"current")+"-"+(recipe?.name??"missing")}
             onChange={e=>{const selected=alternatives[Number(e.target.value)];if(selected)replaceLocal(slot,selected);}}
-            value={undefined}>
+            >
             <option value="">Choose stored recipe…</option>
             {alternatives.map((r,i)=><option key={i} value={i}>{r.name}</option>)}
           </select>
