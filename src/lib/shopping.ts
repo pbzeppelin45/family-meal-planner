@@ -75,7 +75,13 @@ function parseQuantity(text: string): Quantity | null {
   else if (match[3] && !match[4] && !units[match[3]]) detail=match[3];
   return {amount,unit,detail};
 }
-function tidy(value:number): string {
+function tidy(value:number,unit:string): string {
+  if(["cup","tbsp","tsp","pint","quart"].includes(unit) &&
+     Math.abs(value*4-Math.round(value*4))<0.000001){
+    const q=Math.round(value*4),whole=Math.floor(q/4),rest=q%4;
+    const fraction=["","¼","½","¾"][rest];
+    return [whole?String(whole):"",fraction].filter(Boolean).join(" ")||"0";
+  }
   return String(Math.round(value*100)/100);
 }
 const displayUnit:Record<string,string> = {
@@ -85,7 +91,7 @@ const displayUnit:Record<string,string> = {
 function formatUnit(amount:number,unit:string,detail:string):string {
   const base=displayUnit[unit]??unit;
   const plural = amount!==1 && ["cup","clove","head","can","bunch"].includes(unit) ? "s":"";
-  return [tidy(amount), unit==="count"?"":base+plural, detail].filter(Boolean).join(" ");
+  return [tidy(amount,unit), unit==="count"?"":base+plural, detail].filter(Boolean).join(" ");
 }
 export function combineQuantities(amounts: string[]): string {
   const totals=new Map<string,{amount:number;unit:string;detail:string}>();
