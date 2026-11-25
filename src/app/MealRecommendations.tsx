@@ -121,14 +121,16 @@ export default function MealRecommendations({
       });
       const data: {
         message?:string;recipes?:unknown[];
-        summary?:string;sources?:{title:string;url:string}[]
+        summary?:string;sources?:{title:string;url:string}[];sourceType?:string
       } = await response.json();
       if(!response.ok) throw new Error(data.message || "Recipe service was not available.");
       if(mode === "search") {
         if(!data.summary || !Array.isArray(data.sources) || !data.sources.length)
           throw new Error("Search did not return verifiable published sources.");
         setFound({summary:data.summary,sources:data.sources});
-        setMessage("Found published recipe sources through Google Search. Open the original pages to review ingredients, instructions and actual cooking times.");
+        setMessage(data.sourceType?.startsWith("Search links")
+          ? "No search API is connected yet. Open these targeted searches to find publisher recipes. This does not consume an AI generation."
+          : "Found published recipe links. Open the publishers’ pages and verify ingredients, instructions and cooking times.");
         return;
       }
       if(!Array.isArray(data.recipes) || data.recipes.length !== 5 || !data.recipes.every(isRecipe))
@@ -168,7 +170,7 @@ export default function MealRecommendations({
     {message && <p role="status" className="notice">{message}</p>}
     {found && <div className="source-results">
       <h3>Published recipe search results</h3>
-      <p className="source-disclaimer">These are sourced suggestions, not imported recipes. Review the original pages before planning or buying ingredients. Only links provided through Google Search grounding are shown below; recommendations may need checking against your time limits and exclusions.</p>
+      <p className="source-disclaimer">Published recipes are not imported automatically. Some links may be search queries rather than verified recipe pages; open each publisher’s recipe and check the ingredients, instructions and timing before adding it to your plan.</p>
       <div className="source-summary">{found.summary}</div>
       <h4>Original sources</h4>
       <ul className="source-links">{found.sources.map((source,i)=><li key={i}>
