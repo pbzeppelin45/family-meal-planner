@@ -142,15 +142,6 @@ export default function MealRecommendations({
             : "No complete publisher recipes could be extracted. Try another for an individual meal slot.");
         return;
       }
-      if(!Array.isArray(data.recipes) || data.recipes.length!==5 || !data.recipes.every(isRecipe))
-          throw new Error("Not all five published recipes could be imported. No menu was changed.");
-        const recipes=(data.recipes as Recipe[]).map((recipe,i)=>({...recipe,category:groups[i][0].category}));
-        if(recipes.some(r=>!r.sourceUrl || !r.sourceUrl.startsWith("https://")))
-          throw new Error("One or more recipes were missing their publisher source.");
-        setOptions(recipes.map(recipe=>({recipe,source:"published" as const})));
-        setMessage("Five published recipes imported with ingredients and summarized directions. Review or choose Try another for any meal; approve when ready.");
-        return;
-      }
       if(!Array.isArray(data.recipes) || data.recipes.length !== 5 || !data.recipes.every(isRecipe))
         throw new Error("The generator returned an incomplete recipe set.");
       const recipes = (data.recipes as Recipe[]).map((r,i)=>({...r,category:groups[i][0].category}));
