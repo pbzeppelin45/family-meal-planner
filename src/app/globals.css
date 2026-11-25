@@ -40,3 +40,15 @@
 .recommendation-card summary{font-weight:600;cursor:pointer}
 .recommendation-card p{font-size:13px}
 @media(max-width:700px){.recommendation-settings,.recommendation-grid{grid-template-columns:1fr}}
+
+.shopping-summary{display:flex;gap:15px;align-items:center;justify-content:space-between;background:#edf5ef;padding:13px 15px;border-radius:10px;margin:16px 0}
+.shopping-summary span{font-size:13px;color:#4c6b55}
+.shopping-department{margin:20px 0 8px}
+.shopping-department h3{font-size:17px;border-bottom:2px solid #d7e6db;padding-bottom:8px;margin:0 0 6px}
+.shopping-department h3 span{color:#638270;font-size:13px;font-weight:400}
+.shopping-row{display:flex;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid #ecf1ed;padding:12px 0}
+.shopping-row div{display:flex;flex-direction:column;gap:4px;min-width:0}
+.shopping-row small{color:#546d5b}
+.shopping-row .shopping-used{color:#84948a;font-size:12px}
+.shopping-row button{flex-shrink:0;font-size:12px}
+@media(max-width:700px){.shopping-row{align-items:flex-start}.shopping-summary{flex-wrap:wrap}}
