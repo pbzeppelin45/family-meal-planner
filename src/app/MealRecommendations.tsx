@@ -94,13 +94,16 @@ export default function MealRecommendations({
   const [options,setOptions] = useState<MenuOption[]>([]);
   const [busy,setBusy] = useState(false);
   const [message,setMessage] = useState("");
-  const [mode,setMode] = useState<"smart" | "AI">("smart");
+  const [mode,setMode] = useState<"smart" | "search" | "AI">("smart");
+  const [found,setFound] = useState<{summary:string;sources:{url:string;title:string}[]}|null>(null);
   const candidates = useMemo(()=>smartMenu(savedRecipes,history,have,preferences,current),[
     savedRecipes,history,have,preferences,current
   ]);
   const update = (part:Partial<MenuPreferences>) => onPreferences({...preferences,...part});
   const generate = async () => {
     setMessage("");
+    setOptions([]);
+    setFound(null);
     if(mode === "smart") {
       if(candidates.length!==5){setOptions([]);setMessage("Not enough recipes match these exclusions. Adjust them or use AI to generate alternatives.");return;}
       setOptions(candidates);
@@ -111,13 +114,23 @@ export default function MealRecommendations({
     try {
       const token = await getToken();
       if(!token) throw new Error("Please sign in to generate new recipes.");
-      const response = await fetch("/api/ai-menu",{
+      const response = await fetch(mode === "search" ? "/api/find-recipes" : "/api/ai-menu",{
         method:"POST",
         headers:{"Content-Type":"application/json","Authorization":"Bearer "+token},
         body:JSON.stringify({householdId,preferences,history:history.slice(-4),current:current.map(r=>r.name)})
       });
-      const data: {message?:string;recipes?:unknown[]} = await response.json();
-      if(!response.ok) throw new Error(data.message || "AI generation was not available.");
+      const data: {
+        message?:string;recipes?:unknown[];
+        summary?:string;sources?:{title:string;url:string}[]
+      } = await response.json();
+      if(!response.ok) throw new Error(data.message || "Recipe service was not available.");
+      if(mode === "search") {
+        if(!data.summary || !Array.isArray(data.sources) || !data.sources.length)
+          throw new Error("Search did not return verifiable published sources.");
+        setFound({summary:data.summary,sources:data.sources});
+        setMessage("Found published recipe sources through Google Search. Open the original pages to review ingredients, instructions and actual cooking times.");
+        return;
+      }
       if(!Array.isArray(data.recipes) || data.recipes.length !== 5 || !data.recipes.every(isRecipe))
         throw new Error("The generator returned an incomplete recipe set.");
       const recipes = (data.recipes as Recipe[]).map((r,i)=>({...r,category:groups[i][0].category}));
@@ -148,10 +161,20 @@ export default function MealRecommendations({
     </div>
     <div className="recommendation-actions">
       <label><input type="radio" checked={mode==="smart"} onChange={()=>setMode("smart")}/> Recommend from our recipes</label>
-      <label><input type="radio" checked={mode==="AI"} onChange={()=>setMode("AI")}/> Generate new recipes with AI</label>
+      <label><input type="radio" checked={mode==="search"} onChange={()=>setMode("search")}/> Find published recipes with AI search</label>
+      <label><input type="radio" checked={mode==="AI"} onChange={()=>setMode("AI")}/> Create original recipes with AI</label>
       <button disabled={busy} onClick={()=>void generate()}>{busy?"Generating…":"Generate weekly ideas"}</button>
     </div>
     {message && <p role="status" className="notice">{message}</p>}
+    {found && <div className="source-results">
+      <h3>Published recipe search results</h3>
+      <p className="source-disclaimer">These are sourced suggestions, not imported recipes. Review the original pages before planning or buying ingredients. Only links provided through Google Search grounding are shown below; recommendations may need checking against your time limits and exclusions.</p>
+      <div className="source-summary">{found.summary}</div>
+      <h4>Original sources</h4>
+      <ul className="source-links">{found.sources.map((source,i)=><li key={i}>
+        <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a>
+      </li>)}</ul>
+    </div>}
     {options.length > 0 && <>
       <div className="recommendation-grid">
         {options.map(({recipe,source},i)=><article className="recommendation-card" key={i}>
