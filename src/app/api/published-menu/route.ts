@@ -84,42 +84,68 @@ function bannedIngredients(avoid:string){return avoid.split(/[,;\n]/).map(s=>s.t
 function safeSourceName(hit:SearchHit){return hit.title.slice(0,150);}
 async function searchSlot(slot:number,limit:number,avoid:string,notes:string,excluded:Set<string>,signal:AbortSignal):Promise<Source|null>{
  const key=process.env.TAVILY_API_KEY!;
- const max=slot>=2?`under ${limit} minutes`:"";
- const exclude=avoid.split(/[,;\n]/).map(s=>s.trim()).filter(Boolean).slice(0,4).map(x=>"-"+x.replace(/\s+/g,"-")).join(" ");
- const query=[slots[slot].search,max,notes.slice(0,90),exclude,
-  "-roundup -collection -youtube -video -ideas -feed"].filter(Boolean).join(" ").slice(0,410);
- const response=await fetch("https://api.tavily.com/search",{
-  method:"POST",signal,
-  headers:{"Authorization":"Bearer "+key,"Content-Type":"application/json"},
-  body:JSON.stringify({query,search_depth:"basic",max_results:8,
-   include_answer:false,include_images:false,include_raw_content:"markdown"})
- });
- if(!response.ok){
-  console.error("Published recipe Tavily search failed",{slot,httpStatus:response.status});
-  throw new Error(response.status===429?"Tavily is rate-limited.":"Published-recipe search is unavailable.");
+ const max=slot>=2?"under "+limit+" minutes":"";
+ const avoidTerms=avoid.split(/[,;\n]/).map(x=>x.trim()).filter(Boolean).slice(0,4)
+  .map(x=>"-"+x.replace(/\s+/g,"-")).join(" ");
+ const queries=[
+  [slots[slot].search,max,avoidTerms,"full recipe ingredients instructions -roundup -collection -youtube"].filter(Boolean).join(" "),
+  [slots[slot].search.split(" or ")[0],max,avoidTerms,"recipe ingredients method"].filter(Boolean).join(" ")
+ ];
+ const collected:SearchHit[]=[];
+ for(let attempt=0;attempt<2;attempt++){
+  const response=await fetch("https://api.tavily.com/search",{
+   method:"POST",signal,
+   headers:{"Authorization":"Bearer "+key,"Content-Type":"application/json"},
+   body:JSON.stringify({query:queries[attempt].slice(0,380),
+    search_depth:"basic",max_results:9,
+    include_answer:false,include_images:false,include_raw_content:"markdown"})
+  });
+  if(!response.ok){
+   console.error("Published recipe Tavily search failed",{slot,status:response.status});
+   if(attempt===0)throw new Error(response.status===429?"Tavily search is rate-limited.":"Published recipe search is unavailable.");
+   break;
+  }
+  const result=await response.json() as {results?:SearchHit[]};
+  for(const hit of result.results??[]){
+   if(!isSafeUrl(hit.url)||!individualRecipe(hit)||excluded.has(hit.url))continue;
+   if(!collected.some(x=>x.url===hit.url))collected.push(hit);
+  }
+  // Search again automatically if the first results are mostly collections or
+  // don't contain a recognisable ingredient and method section.
+  if(collected.some(x=>extractCore(x.raw_content??"").length>300) || collected.length>=7)break;
  }
- const result=await response.json() as {results?:SearchHit[]};
- const hits=(result.results??[]).filter(h=>isSafeUrl(h.url)&&individualRecipe(h))
-  .filter(h=>!excluded.has(h.url));
- for(const hit of hits){
+ for(const hit of collected){
   const body=extractCore(hit.raw_content??"");
-  if(body.length>350)return {title:safeSourceName(hit),url:hit.url,body};
+  if(body.length>300){
+   console.info("Published search found source",{slot,candidates:collected.length,via:"search"});
+   return {title:safeSourceName(hit),url:hit.url,body};
+  }
  }
- // One extract request can recover ingredient details for results lacking raw_content.
- const candidates=hits.slice(0,5);
- if(!candidates.length)return null;
- const extract=await fetch("https://api.tavily.com/extract",{
+ const candidates=collected.slice(0,6);
+ if(!candidates.length){
+  console.info("Published search found no individual recipe pages",{slot});
+  return null;
+ }
+ const extraction=await fetch("https://api.tavily.com/extract",{
   method:"POST",signal,
   headers:{"Authorization":"Bearer "+key,"Content-Type":"application/json"},
-  body:JSON.stringify({urls:candidates.map(c=>c.url),extract_depth:"basic",format:"markdown"})
+  body:JSON.stringify({urls:candidates.map(x=>x.url),
+   extract_depth:"basic",format:"markdown"})
  });
- if(!extract.ok)return null;
- const extracted=await extract.json() as {results?:{url:string;raw_content?:string}[]};
- for(const hit of candidates){
-  const data=extracted.results?.find(x=>x.url===hit.url);
-  const body=extractCore(data?.raw_content??"");
-  if(body.length>350)return {title:safeSourceName(hit),url:hit.url,body};
+ if(!extraction.ok){
+  console.warn("Published recipe extract unavailable",{slot,status:extraction.status});
+  return null;
  }
+ const data=await extraction.json() as {results?:{url:string;raw_content?:string}[]};
+ for(const hit of candidates){
+  const raw=data.results?.find(x=>x.url===hit.url)?.raw_content??"";
+  const body=extractCore(raw);
+  if(body.length>300){
+   console.info("Published search found source",{slot,candidates:collected.length,via:"extract"});
+   return {title:safeSourceName(hit),url:hit.url,body};
+  }
+ }
+ console.info("Published search found no complete source",{slot,candidates:collected.length});
  return null;
 }
 async function fromGemini(sources:{slot:number;source:Source}[],limit:number,avoid:string,signal:AbortSignal):Promise<Recipe[]>{
