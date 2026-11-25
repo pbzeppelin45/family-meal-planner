@@ -64,7 +64,7 @@ function decimal(value: string): number | null {
 function parseQuantity(text: string): Quantity | null {
   const input = text.trim().toLowerCase();
   // Supports '1 1/2 cups', '1.5 cups', '3 cloves', '2' and '13.5 fl oz'.
-  const match = input.match(/^(\d+(?:\.\d+)?(?:\s+\d+\/\d+)?|\d+\/\d+)(?:\s+([a-z]+))?(?:\s+([a-z]+))?(.*)$/);
+  const match = input.match(/^(\d+\s+\d+\/\d+|\d+\/\d+|\d+(?:\.\d+)?)(?:\s+([a-z]+))?(?:\s+([a-z]+))?(.*)$/);
   if (!match) return null;
   const amount = decimal(match[1]);
   if (amount===null || amount<=0) return null;
