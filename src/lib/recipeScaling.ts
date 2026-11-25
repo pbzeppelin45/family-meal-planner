@@ -83,9 +83,14 @@ export function scaleAmount(amount:string,ingredientName:string,ratio:number):{
    return {amount:render(count,"count","",false),warning:"Converted dozens to individual items"};
  }
  // "15 oz can" is a package size, not a request to buy a 19 oz can.
- if((unit==="oz"||unit==="fl oz"||unit==="g")&&/\bcans?\b|\bjars?\b|\bpackages?\b/i.test(tail)){
-   return {amount,warning:"Package size is ambiguous; select number of packages manually"};
+ if((unit==="oz"||unit==="fl oz"||unit==="g") && /^(can|cans|jar|jars|package|packages)\b/i.test(tail)){
+   const packageType=tail.match(/^(can|cans|jar|jars|package|packages)\b/i)![1].toLowerCase();
+   const singular=packageType.replace(/s$/,"");
+   const count=roundCeil(ratio,1);
+   return {amount:count+" × "+compactNumber(parsed.value)+" "+unit+" "+singular+(count!==1?"s":"")};
  }
+ if(/\s\+\s*\d|\b(?:plus|and)\s+\d/i.test(tail))
+   return {amount,warning:"Compound quantity needs manual adjustment"};
  const scaled=parsed.value*ratio;
  // Round UP to avoid coming short. Volume is measured in quarter units;
  // gram/ml use whole units, and countable produce/eggs/packs must stay whole.
