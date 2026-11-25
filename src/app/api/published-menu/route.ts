@@ -7,7 +7,7 @@ const CATEGORIES=["Weekend breakfast","Sunday supper","Weeknight 1","Weeknight 2
 type SearchHit={title:string;url:string;raw_content?:string;content?:string};
 type Source={title:string;url:string;body:string};
 type RequestBody={
- householdId?:string;slot?:number;excludeUrls?:string[];
+ householdId?:string;slot?:number;excludeUrls?:string[];variant?:number;
  preferences?:{maxWeeknightMinutes?:number;avoid?:string;notes?:string};
  history?:{names?:string[]}[];
  current?:string[];
@@ -82,14 +82,23 @@ const slots=[
 ];
 function bannedIngredients(avoid:string){return avoid.split(/[,;\n]/).map(s=>s.toLowerCase().trim()).filter(Boolean);}
 function safeSourceName(hit:SearchHit){return hit.title.slice(0,150);}
-async function searchSlot(slot:number,limit:number,avoid:string,notes:string,excluded:Set<string>,signal:AbortSignal):Promise<Source|null>{
+async function searchSlot(slot:number,limit:number,avoid:string,notes:string,excluded:Set<string>,signal:AbortSignal,variant=0):Promise<Source|null>{
  const key=process.env.TAVILY_API_KEY!;
  const max=slot>=2?"under "+limit+" minutes":"";
  const avoidTerms=avoid.split(/[,;\n]/).map(x=>x.trim()).filter(Boolean).slice(0,4)
   .map(x=>"-"+x.replace(/\s+/g,"-")).join(" ");
+ const variants=[
+  slots[slot].search,
+  ["blueberry baked oatmeal breakfast","herb roast chicken family Sunday dinner",
+   "sesame ginger turkey meatballs","citrus garlic cod rice","tomato spinach mushroom pasta"][slot],
+  ["savory breakfast strata recipe","braised beef pot roast family dinner",
+   "ginger soy pork lettuce bowls","honey sesame salmon broccoli",
+   "chickpea sweet potato coconut curry"][slot]
+ ];
+ const seed=variants[Math.max(0,variant)%variants.length];
  const queries=[
-  [slots[slot].search,max,avoidTerms,"full recipe ingredients instructions -roundup -collection -youtube"].filter(Boolean).join(" "),
-  [slots[slot].search.split(" or ")[0],max,avoidTerms,"recipe ingredients method"].filter(Boolean).join(" ")
+  [seed,max,avoidTerms,"full recipe ingredients instructions -roundup -collection -youtube"].filter(Boolean).join(" "),
+  [seed,max,avoidTerms,"recipe step by step ingredients method"].filter(Boolean).join(" ")
  ];
  const collected:SearchHit[]=[];
  for(let attempt=0;attempt<2;attempt++){
@@ -250,6 +259,7 @@ export async function POST(req:NextRequest){
   ?Number(preferences.maxWeeknightMinutes):40;
  const avoid=typeof preferences.avoid==="string"?preferences.avoid.slice(0,200):"";
  const notes=typeof preferences.notes==="string"?preferences.notes.slice(0,130):"";
+ const variant=Number.isInteger(input.variant)?Math.max(0,Math.min(20,Number(input.variant))):0;
  const exclude=new Set((Array.isArray(input.excludeUrls)?input.excludeUrls:[])
   .filter(isSafeUrl).slice(0,25));
  const targets=input.slot===undefined?[0,1,2,3,4]:[input.slot];
