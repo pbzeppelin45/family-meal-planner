@@ -92,7 +92,7 @@ No raw flour/egg preparation instructions without appropriate cooking. No allerg
     // Prefer Google's free-tier eligible Gemini key; OpenAI remains a low-cost fallback.
     let output: string | undefined;
     if(provider==="gemini") {
-      const model=process.env.GEMINI_MEAL_MODEL || "gemini-2.5-flash-lite";
+      const model=process.env.GEMINI_MEAL_MODEL || "gemini-3.5-flash-lite";
       const result=await fetch(
         "https://generativelanguage.googleapis.com/v1beta/models/"+encodeURIComponent(model)+":generateContent",{
         method:"POST",signal:controller.signal,
@@ -109,8 +109,22 @@ No raw flour/egg preparation instructions without appropriate cooking. No allerg
         })
       });
       if(!result.ok) {
-        if(result.status===429) return reply("The free AI tier is rate-limited. Try again later; no menu was changed.",429);
-        return reply("Gemini generation is unavailable for this key or model. Check model access and quotas in Google AI Studio.",502);
+        const rawError=(await result.text()).slice(0,3000);
+        let providerStatus="";
+        try {
+          const parsed=JSON.parse(rawError) as {error?:{status?:string;message?:string}};
+          providerStatus=parsed.error?.status??"";
+        } catch { /* Ignore unstructured upstream errors */ }
+        console.error("Gemini recipe generation failed",{
+          httpStatus:result.status,
+          providerStatus,
+          model,
+        });
+        if(result.status===429) return reply("Gemini rate limit reached. Check the model's free-tier quota in Google AI Studio.",429);
+        if(result.status===400) return reply("Gemini rejected the recipe request format. This needs an app-side fix.",502);
+        if(result.status===401 || result.status===403) return reply("Google rejected the API key or your project lacks Gemini generation access. Check Google AI Studio.",502);
+        if(result.status===404) return reply("The selected Gemini model is not available to your API project. Try a current Flash-Lite model.",502);
+        return reply("Gemini returned HTTP "+result.status+". Check the project's model access and quota.",502);
       }
       const value=await result.json() as {candidates?:{content?:{parts?:{text?:string}[]}}[]};
       output=value.candidates?.[0]?.content?.parts?.map(p=>p.text??"").join("");
